@@ -3,7 +3,7 @@
 **Milestone:** 0 — Project foundation  
 **Priority:** Foundational  
 **Depends on:** —  
-**Status:** Not started
+**Status:** Approved / complete
 
 ## Objective
 
@@ -64,11 +64,11 @@ Manual verification only: commands succeed; device authorized; NDK path visible 
 
 ## Acceptance criteria
 
-- [ ] JDK 17 confirmed.
-- [ ] SDK Platform + NDK + CMake installed and version-recorded.
-- [ ] At least one physical Android device (or explicitly accepted emulator limitation) available via `adb`.
-- [ ] Provisional min/compile/target SDK written down.
-- [ ] No application code committed as part of this phase.
+- [x] JDK 17 confirmed.
+- [x] SDK Platform + NDK + CMake installed and version-recorded.
+- [x] At least one physical Android device (or explicitly accepted emulator limitation) available via `adb`.
+- [x] Provisional min/compile/target SDK written down.
+- [x] No application code committed as part of this phase.
 
 ## Review checklist
 
@@ -84,16 +84,14 @@ Manual verification only: commands succeed; device authorized; NDK path visible 
 
 ## Completion report
 
-_Fill after execution — do not mark complete until acceptance criteria pass._
-
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Environment contract only — verified local toolchain and recorded locked versions. No application or native source code. |
+| Files created/modified | `docs/03-project-setup.md` (locked environment section); `docs/phases/phase-00.1-dev-environment.md` (this report); `docs/README.md` (project state). |
+| Tests executed | Manual: `java -version`; SDK package inventory via `sdkmanager --list_installed`; NDK `aarch64-linux-android26-clang++ -std=c++20` compile smoke; `adb devices -l`; emulator `getprop` for API/ABI. |
+| Results | JDK 17.0.21 OK. Platforms 34/35/36 present. NDK 28.2.13676358 (r28c) OK with C++20. CMake 3.22.1 OK. Licenses present under SDK. `adb` sees emulator-5556 (API 36, arm64). |
+| Known limitations | **No physical device connected** — emulator-only accepted for Phase 0.x install/launch; not valid for Phase 1.2+ audio underrun/latency acceptance. **Android Studio not installed** — CLI SDK/NDK is enough for early phases. Host `cmake` not on PATH (SDK CMake is used). `/usr/libexec/java_home` does not see Homebrew JDK (Gradle should use `JAVA_HOME`). |
+| Decisions made | minSdk **26**; compileSdk/targetSdk **35**; NDK **28.2.13676358**; CMake **3.22.1**; proceed without Android Studio for now. |
 | Next phase | 0.2 — Android Gradle + Compose skeleton |
 
 **Approval required before Phase 0.2.**

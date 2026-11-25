@@ -29,13 +29,13 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 5. A phase is complete only after acceptance criteria are validated — not when code is generated.
 6. Explicit approval is required before starting the next phase.
 
-## Project state (initial)
+## Project state snapshot
 
 | Field | Value |
 |-------|-------|
-| Current phase | None — awaiting approval of roadmap / Phase 0.1 |
-| Completed phases | — |
-| Implementation status | Docs only; no application code |
-| Technologies integrated | — |
-| Outstanding issues | Open architectural decisions listed in [02](02-architecture-review.md) |
-| Next proposed phase | Phase 0.1 — Development environment |
+| Current phase | **0.3 — Native CMake + JNI smoke** (built; confirm on emulator UI) |
+| Completed phases | 0.1 Development environment; 0.2 Android Compose skeleton |
+| Implementation status | `libhowl_engine.so` packaged; Kotlin↔C++ smoke wired in UI |
+| Technologies integrated | Prior + NDK 28.2 / CMake 3.22.1 / JNI (`howl_engine`) |
+| Outstanding issues | Emulator/adb flaky during agent install; confirm `1+1=2` on device; open arch decisions in [02](02-architecture-review.md) |
+| Next proposed phase | Phase 0.4 — Module layout (after 0.3 approval) |

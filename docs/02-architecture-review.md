@@ -138,8 +138,8 @@ Resolve these at the named phase — do not silently change architecture:
 - [ ] Gapless strategy detail (design 2.5, implement 8.x)
 - [ ] Resampling ownership (Phase 2.2 / 2.4)
 - [ ] Analysis thread vs in-callback light meters (Phase 7.1)
-- [ ] Min SDK / NDK versions (Phase 0.1 / 0.2)
-- [ ] App package / product name branding in code (`howl` vs temporary) (Phase 0.2)
+- [x] Min SDK / NDK versions (Phase 0.1) — minSdk 26, compile/target 35, NDK 28.2.13676358
+- [x] App package / product name branding in code (Phase 0.2) — `com.howl.music`
 
 ## Architecture principles we will not change without discussion
 

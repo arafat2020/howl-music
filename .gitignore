@@ -1,0 +1,43 @@
+# Built artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+.gradle/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local machine / secrets
+local.properties
+*.iml
+.idea/
+*.keystore
+*.jks
+google-services.json
+
+# NDK / CMake host builds (later phases)
+native/build-host/
+cmake-build-*/
+CMakeUserPresets.json
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+.cursor/
+
+# Kotlin
+.kotlin/
+
+# Logs
+*.log

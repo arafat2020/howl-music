@@ -3,7 +3,7 @@
 **Milestone:** 0 — Project foundation  
 **Priority:** Foundational  
 **Depends on:** 0.2  
-**Status:** Not started
+**Status:** Implemented — awaiting device UI confirmation + your approval
 
 ## Objective
 
@@ -74,10 +74,10 @@ android-app/ (or audio-bridge/)
 
 ## Acceptance criteria
 
-- [ ] Native library loads on device.
-- [ ] JNI call returns expected value.
-- [ ] Build is reproducible via Gradle.
-- [ ] No audio I/O code present.
+- [ ] Native library loads on device. *(APK contains `libhowl_engine.so`; confirm on emulator UI)*
+- [ ] JNI call returns expected value. *(expect `howl_engine/0.0.1-smoke` and `1+1=2`)*
+- [x] Build is reproducible via Gradle.
+- [x] No audio I/O code present.
 
 ## Review checklist
 
@@ -95,12 +95,30 @@ android-app/ (or audio-bridge/)
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | `libhowl_engine.so` via CMake; JNI exports `nativeEngineVersion` + `nativeAdd`; Kotlin `NativeSmoke` façade; Compose shows native status under “Howl”. |
+| Files created/modified | `android-app/src/main/cpp/CMakeLists.txt`, `howl_jni_smoke.cpp`, `NativeSmoke.kt`, `MainActivity.kt`, `android-app/build.gradle.kts` (ndkVersion + externalNativeBuild + abiFilters). |
+| Tests executed | `./gradlew :android-app:assembleDebug` (CMake arm64-v8a + x86_64). APK inspect: `lib/arm64-v8a/libhowl_engine.so` and `lib/x86_64/libhowl_engine.so` present. Device install blocked this session by emulator/adb flakiness. |
+| Results | Native pipeline compiles and packages correctly. **Please run install on your emulator to confirm UI text.** |
+| Known limitations | Native code still lives in `android-app` (moves to `audio-bridge` in 0.4). Emulator cold-boot/adb was unreliable during agent verification. |
+| Decisions made | Library name `howl_engine`. ABIs `arm64-v8a` + `x86_64`. C++20. Load errors surfaced in UI instead of crashing. Prefer `ndkVersion` over deprecated `ndk.dir`. |
 | Next phase | 0.4 — Module layout & build wiring |
 
-**Approval required before Phase 0.4.**
+### Device confirm (you run)
+
+```bash
+cd /Users/betopia/Desktop/Arafat/howl-music
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+export GRADLE_USER_HOME=/Volumes/2TB/gradle-home
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+
+# Start Pixel_API_36 from Device Manager /:
+# emulator -avd Pixel_API_36 -no-snapshot-load
+adb devices   # wait until … device
+./gradlew --stop
+./gradlew :android-app:installDebug
+adb shell am start -n com.howl.music/.MainActivity
+```
+
+Expected on screen: **Howl**, then `howl_engine/0.0.1-smoke` and `1+1=2`.
+
+**Approval required before Phase 0.4.** (Approve after you see the native lines, or ask me to retry install once your emulator is stable.)

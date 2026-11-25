@@ -2,20 +2,54 @@
 
 Establish a reproducible environment **before** application features. Add dependencies only when the corresponding phase needs them.
 
+## Locked environment (Phase 0.1 — 25 November 2026)
+
+Verified on this machine. Prefer these exact versions in Gradle/CMake until a later phase deliberately upgrades them.
+
+| Tool | Locked version | Location / notes |
+|------|----------------|------------------|
+| Host OS | macOS 26.3 (arm64) | Darwin 25.3.0 |
+| JDK | **17.0.21** (Homebrew OpenJDK 17) | `JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home` |
+| Android SDK root | Homebrew command-line tools | `ANDROID_SDK_ROOT=/opt/homebrew/share/android-commandlinetools` |
+| compileSdk / targetSdk | **35** | `platforms;android-35` installed (34 and 36 also present) |
+| minSdk | **26** (provisional) | Reliable AAudio/Oboe path; NDK provides `aarch64-linux-android26-clang++` |
+| Android NDK | **28.2.13676358** (r28c) | `$SDK/ndk/28.2.13676358`; Clang 19.0.1; C++20 OK |
+| CMake (SDK) | **3.22.1** | `$SDK/cmake/3.22.1` |
+| Build-Tools | **36.0.0** | Installed |
+| platform-tools / adb | **37.0.1** | On PATH via SDK |
+| Emulator package | **37.2.13** | System image: android-36 google_apis_playstore arm64-v8a |
+| Git | 2.50.1 (Apple Git-155) | — |
+| Android Studio | **Not installed** | CLI SDK/NDK sufficient for early phases; install Studio before heavy Compose UI work if desired |
+
+### Device status (Phase 0.1)
+
+| Item | Status |
+|------|--------|
+| `adb` | Works |
+| Connected target | **Emulator only** — `emulator-5556` (`sdk_gphone64_arm64`, API 36 / Android 16) |
+| Physical device | **None connected** |
+
+**Accepted limitation:** Phase 0.1 proceeds with the emulator for install/launch checks. **Physical-device validation is required before accepting Phase 1.2 (Oboe / underruns / latency).** Emulators are not authoritative for realtime audio quality.
+
+### Decisions locked in Phase 0.1
+
+1. **minSdk = 26** (provisional for first credible release). Revisit only if product explicitly needs API 24–25 devices.
+2. **compileSdk / targetSdk = 35** for the app skeleton (Phase 0.2). Platform 36 may be adopted later; do not churn without a reason.
+3. **NDK 28.2.13676358** is the project NDK until a deliberate upgrade.
+4. **CMake 3.22.1** (SDK package) is the native build CMake.
+
 ## Required development tools
 
-| Tool | Proposed baseline | Notes |
-|------|-------------------|-------|
-| JDK | **17** (Temurin or Oracle) | Required by modern Android Gradle Plugin |
-| Android Studio | Latest stable | Compose + NDK tooling |
-| Android SDK | API **35** compile / target; min API **26** (proposed) | Min 26 gives reliable AAudio/Oboe path; revisit if you need older devices |
-| Android NDK | **r27+** (side-by-side in SDK Manager) | C++20 support |
-| CMake | **3.22.1+** (SDK CMake package) | Matches AGP expectations |
-| Gradle | Version catalog + AGP matching Studio stable | Wrapper committed in repo |
-| Git | Required | — |
-| Device / emulator | Physical device strongly preferred for audio | Emulators are weak for latency/underrun validation |
-
-> **Open decision:** Min SDK 26 vs 24. Prefer 26 unless product requires older phones.
+| Tool | Baseline | Notes |
+|------|----------|-------|
+| JDK | **17** (locked 17.0.21 on this machine) | Required by modern Android Gradle Plugin |
+| Android Studio | Optional early; recommended for Compose | Not installed here yet; CLI SDK is present |
+| Android SDK | API **35** compile / target; min API **26** | See locked table above |
+| Android NDK | **28.2.13676358** (r28c) | C++20 verified |
+| CMake | **3.22.1** (SDK CMake package) | Matches AGP expectations |
+| Gradle | **8.11.1** wrapper + version catalog | AGP **8.7.3**, Kotlin **2.0.21**, Compose BOM **2024.12.01** (Phase 0.2) |
+| Git | Required | 2.50.1 present |
+| Device / emulator | Physical device required from Phase 1.2 | Emulator OK for 0.x install smoke only |
 
 ## C++ toolchain
 
