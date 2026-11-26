@@ -76,7 +76,7 @@ Brief says “FFmpeg and/or dedicated decoders.” That choice affects binary si
 | Android MediaCodec / extractor (via JNI helper thread) | Platform-maintained | Less control; format quirks |
 | Hybrid | WAV/FLAC native; others via MediaCodec | Two paths to keep correct |
 
-**Decision needed before Phase 2.4.** Do not block Phase 1–2.3 on it.
+**Decision (Phase 2.4):** Hybrid — WAV + FLAC via `dr_flac` now; MediaCodec (then optional thin FFmpeg) later for lossy. See [decoder-strategy.md](decisions/decoder-strategy.md).
 
 ### 2. Gapless playback is listed as success, but design is not specified
 
@@ -112,7 +112,7 @@ Brief modules (`android-app`, `audio-engine`, …) are logical. Gradle will need
 
 Brief correctly flags this. Using JUCE DSP in a commercial app may require a paid license depending on version/terms.
 
-**Decision needed before Phase 3.1:** confirm JUCE license for intended distribution; record in third-party notices process.
+**Decision (Phase 3.1):** Proprietary Play Store builds require a **JUCE commercial license** before shipping with JUCE linked. Dev uses DSP modules only (no GUI). See [juce-license.md](decisions/juce-license.md).
 
 ### 8. Persistence of EQ presets: Room vs engine-side
 
@@ -134,7 +134,7 @@ Presets are product state (Room) but must apply to the engine. Avoid storing two
 Resolve these at the named phase — do not silently change architecture:
 
 - [ ] Decoder strategy (Phase 2.4)
-- [ ] JUCE commercial license confirmation (Phase 3.1)
+- [x] JUCE commercial license confirmation (Phase 3.1) — decision recorded; purchase before store ship
 - [ ] Gapless strategy detail (design 2.5, implement 8.x)
 - [ ] Resampling ownership (Phase 2.2 / 2.4)
 - [ ] Analysis thread vs in-callback light meters (Phase 7.1)

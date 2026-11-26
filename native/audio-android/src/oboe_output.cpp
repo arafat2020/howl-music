@@ -1,5 +1,6 @@
 #include "howl/audio_output.h"
 
+#include "howl/dsp/process_graph.h"
 #include "howl/pcm_ring_buffer.h"
 #include "howl/sine_osc.h"
 
@@ -26,6 +27,7 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
     int32_t channels = 2;
     OutputMode mode = OutputMode::Sine;
     PcmRingBuffer* ring = nullptr;
+    ProcessGraph* graph = nullptr;
     std::atomic<int64_t>* positionFrames = nullptr;
     std::atomic<bool> paused{false};
 
@@ -66,6 +68,10 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
                     static_cast<size_t>(samples) * sizeof(float));
                 underrunCount.fetch_add(1, std::memory_order_relaxed);
             }
+            // Graph after pop: process only frames that contain audio.
+            if (graph != nullptr && got > 0) {
+                graph->process(out, got);
+            }
             return oboe::DataCallbackResult::Continue;
         }
 
@@ -105,6 +111,10 @@ void AudioOutput::setOutputMode(OutputMode mode, PcmRingBuffer* ring) {
 
 void AudioOutput::setPositionFrames(std::atomic<int64_t>* positionFrames) {
     impl_->positionFrames = positionFrames;
+}
+
+void AudioOutput::setProcessGraph(ProcessGraph* graph) {
+    impl_->graph = graph;
 }
 
 void AudioOutput::setPaused(bool paused) {

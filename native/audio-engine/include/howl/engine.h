@@ -13,6 +13,7 @@
 #if defined(__ANDROID__)
 #include "howl/audio_output.h"
 #include "howl/decode_worker.h"
+#include "howl/dsp/process_graph.h"
 #include "howl/pcm_ring_buffer.h"
 #include <thread>
 #endif
@@ -114,10 +115,13 @@ private:
     std::unique_ptr<PcmRingBuffer> ring_;
     std::unique_ptr<DecodeWorker> worker_;
     std::unique_ptr<AudioOutput> output_;
+    ProcessGraph processGraph_;
 
     std::thread queueWatchThread_;
     std::atomic<bool> queueWatchRunning_{false};
     std::atomic<bool> trackChanging_{false};
+
+    void prepareProcessGraphLocked();
 #endif
 };
 

@@ -23,9 +23,9 @@ Engine::~Engine() {
 }
 
 Status Engine::probeAndStore(const char* path) {
-    auto probe = createWavDecoder();
-    const Status opened = probe->open(path);
-    if (opened != Status::Ok) {
+    Status opened = Status::UnsupportedFormat;
+    auto probe = openDecoder(path, &opened);
+    if (!probe) {
         return opened;
     }
     const AudioFormat fmt = probe->format();
@@ -101,9 +101,9 @@ Status Engine::enqueue(const char* path) {
         return Status::NullHandle;
     }
 
-    auto probe = createWavDecoder();
-    const Status opened = probe->open(path);
-    if (opened != Status::Ok) {
+    Status opened = Status::UnsupportedFormat;
+    auto probe = openDecoder(path, &opened);
+    if (!probe) {
         return opened;
     }
     const AudioFormat fmt = probe->format();
@@ -294,9 +294,9 @@ Status Engine::start() {
     paused_.store(false, std::memory_order_relaxed);
 
     if (mode == PlayMode::File) {
-        auto decoder = createWavDecoder();
-        const Status opened = decoder->open(path.c_str());
-        if (opened != Status::Ok) {
+        Status opened = Status::UnsupportedFormat;
+        auto decoder = openDecoder(path.c_str(), &opened);
+        if (!decoder) {
             std::lock_guard<std::mutex> lock(mutex_);
             state_ = EngineState::Idle;
             return opened;
@@ -348,6 +348,9 @@ Status Engine::start() {
             ring_ = std::move(ring);
             worker_ = std::move(worker);
             output_ = std::move(output);
+            if (mode == PlayMode::File) {
+                prepareProcessGraphLocked();
+            }
             state_ = EngineState::Running;
             if (mode == PlayMode::File) {
                 startQueueWatch();
@@ -393,6 +396,9 @@ Status Engine::stop() {
             return Status::Ok;
         }
         state_ = EngineState::Stopping;
+        if (output_) {
+            output_->setProcessGraph(nullptr);
+        }
         toJoin = std::move(worker_);
         toStop = std::move(output_);
         toDrop = std::move(ring_);
@@ -404,6 +410,7 @@ Status Engine::stop() {
         toJoin.reset();
     }
     if (toStop) {
+        toStop->setProcessGraph(nullptr);
         (void)toStop->stop();
         toStop.reset();
     }
@@ -586,8 +593,25 @@ EngineDiagnostics Engine::diagnostics() const {
 }
 
 const char* Engine::version() {
-    return "howl_engine/0.6.0-queue";
+    return "howl_engine/0.8.0-dsp-graph";
 }
+
+#if defined(__ANDROID__)
+
+void Engine::prepareProcessGraphLocked() {
+    if (!output_) {
+        return;
+    }
+    const int32_t rate = output_->sampleRate();
+    const int32_t channels = output_->channelCount();
+    // Conservative max block — covers typical Oboe bursts without alloc in process().
+    constexpr int32_t kMaxBlock = 2048;
+    processGraph_.prepare(static_cast<double>(rate), kMaxBlock, channels);
+    processGraph_.setBypassed(false);
+    output_->setProcessGraph(&processGraph_);
+}
+
+#endif
 
 #if defined(__ANDROID__)
 
@@ -629,9 +653,9 @@ Status Engine::changeTrack(const std::string& path) {
         oldWorker.reset();
     }
 
-    auto decoder = createWavDecoder();
-    const Status opened = decoder->open(path.c_str());
-    if (opened != Status::Ok) {
+    Status opened = Status::UnsupportedFormat;
+    auto decoder = openDecoder(path.c_str(), &opened);
+    if (!decoder) {
         trackChanging_.store(false, std::memory_order_release);
         (void)stop();
         return opened;
@@ -654,6 +678,7 @@ Status Engine::changeTrack(const std::string& path) {
         // Reopen Oboe only when rate/channels no longer match the open stream.
         if (fmt.sampleRate != output_->sampleRate() ||
             fmt.channelCount != output_->channelCount()) {
+            output_->setProcessGraph(nullptr);
             (void)output_->stop();
             output_ = std::make_unique<AudioOutput>();
             output_->setOutputMode(OutputMode::Ring, ring_.get());
@@ -671,6 +696,7 @@ Status Engine::changeTrack(const std::string& path) {
                 state_ = EngineState::Idle;
                 return Status::UnsupportedFormat;
             }
+            prepareProcessGraphLocked();
         }
 
         durationFrames_ = decoder->frameCount();

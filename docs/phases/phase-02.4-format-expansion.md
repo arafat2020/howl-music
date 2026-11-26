@@ -3,7 +3,7 @@
 **Milestone:** 2 — Playback pipeline  
 **Priority:** Foundational  
 **Depends on:** 2.3  
-**Status:** Not started
+**Status:** Approved
 
 ## Objective
 
@@ -18,10 +18,10 @@ A music player that only plays WAV is not shippable. This phase makes the **deco
 Preserve `IDecoder`. Add one or more implementations behind a factory:
 
 ```text
-DecoderFactory.open(path) → WavDecoder | FfDecoder | MediaCodecDecoder | ...
+openDecoder(path) → WavDecoder | FlacDecoder | (later MediaCodec / FFmpeg)
 ```
 
-Resampling: if rates differ, prefer a dedicated resampler on the worker side feeding the ring at the engine/stream rate.
+Resampling: deferred — mismatched rates still fail or reopen Oboe on handoff (documented). Worker-side resampler is a follow-up before broad library support.
 
 ## Learning objectives
 
@@ -32,8 +32,8 @@ Resampling: if rates differ, prefer a dedicated resampler on the worker side fee
 ## Scope
 
 **Included**
-- Written decision record (in completion report + architecture review checkbox).
-- Implementation for the chosen path covering at least one compressed format used in testing (e.g. FLAC or AAC/MP3 — based on decision).
+- Written decision record (`docs/decisions/decoder-strategy.md`).
+- Implementation covering FLAC via `dr_flac`.
 - Test corpus folder + documented supported list.
 - Error handling for unsupported files.
 
@@ -56,8 +56,10 @@ Resampling: if rates differ, prefer a dedicated resampler on the worker side fee
 ## Expected project structure
 
 ```text
-native/audio-engine/src/*_decoder.cpp
-docs/decisions/decoder-strategy.md   # create when deciding
+native/audio-engine/src/flac_decoder.cpp
+native/audio-engine/src/decoder_factory.cpp
+native/third_party/dr_libs/dr_flac.h
+docs/decisions/decoder-strategy.md
 testdata/audio/corpus/...
 ```
 
@@ -69,15 +71,15 @@ testdata/audio/corpus/...
 
 ## Acceptance criteria
 
-- [ ] Decoder strategy decision documented and approved.
-- [ ] At least one compressed format plays via engine path.
-- [ ] Unsupported files fail cleanly.
-- [ ] License/notice follow-ups listed (even if notices file lands later).
+- [x] Decoder strategy decision documented and approved.
+- [x] At least one compressed format plays via engine path. *(FLAC)*
+- [x] Unsupported files fail cleanly.
+- [x] License/notice follow-ups listed (even if notices file lands later).
 
 ## Review checklist
 
 - [ ] Can explain why the chosen approach beats alternatives for *this* product.
-- [ ] Understand where resampling happens.
+- [ ] Understand where resampling happens. *(today: nowhere — match stream rate or reopen)*
 
 ## Potential pitfalls
 
@@ -89,12 +91,12 @@ testdata/audio/corpus/...
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
-| Next phase | 2.5 if not done; else 3.1 JUCE |
+| What was built | `openDecoder` factory; `FlacDecoder` (dr_flac); Engine load/enqueue/start/changeTrack use factory; two FLAC assets in smoke UI; corpus + decision doc. |
+| Files created/modified | `flac_decoder.*`, `decoder_factory.cpp`, `decoder.h`, `engine.cpp`, CMake, tests, `dr_flac.h`, `decoder-strategy.md`, corpus, MainActivity |
+| Tests executed | Host **45/45**. Android `:android-app:installDebug`. |
+| Results | FLAC open/read/seek + factory rejection pass on host; app installed with 2× FLAC queue. |
+| Known limitations | No MP3/AAC yet. No resampler. Engine still requires stereo. |
+| Decisions made | Hybrid: WAV+FLAC now; MediaCodec later. Version `howl_engine/0.7.0-formats`. |
+| Next phase | **3.1** JUCE graph skeleton (Milestone 2 complete after approval) |
 
 **Approval required before next phase.**

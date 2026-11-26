@@ -36,7 +36,7 @@ import kotlinx.coroutines.delay
 import java.io.File
 
 /**
- * Phase 2.5: two-track queue, next/prev, repeat, EOF auto-advance.
+ * Phase 2.4: two-track FLAC queue via openDecoder (WAV still supported).
  */
 class MainActivity : ComponentActivity() {
 
@@ -49,8 +49,8 @@ class MainActivity : ComponentActivity() {
     private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
     private var transportText by mutableStateOf(TransportSnapshot.Empty.formatLine())
     private var queueText by mutableStateOf("queue —")
-    private var wav440: String? = null
-    private var wav880: String? = null
+    private var flac440: String? = null
+    private var flac880: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,8 +58,8 @@ class MainActivity : ComponentActivity() {
 
         status = HowlEngine.libraryError() ?: try {
             engine = HowlEngine.create()
-            wav440 = copyAssetWav("sine_440_16bit_stereo.wav")
-            wav880 = copyAssetWav("sine_880_16bit_stereo.wav")
+            flac440 = copyAsset("sine_440_16bit_stereo.flac")
+            flac880 = copyAsset("sine_880_16bit_stereo.flac")
             HowlEngine.version()
         } catch (t: Throwable) {
             "Create failed: ${t.message}"
@@ -111,7 +111,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun copyAssetWav(name: String): String {
+    private fun copyAsset(name: String): String {
         val out = File(cacheDir, name)
         assets.open(name).use { input ->
             out.outputStream().use { output -> input.copyTo(output) }
@@ -133,16 +133,16 @@ class MainActivity : ComponentActivity() {
     private fun onToggleMode() {
         if (running) return
         fileMode = !fileMode
-        status = if (fileMode) "mode=File (2-track queue)" else "mode=Sine"
+        status = if (fileMode) "mode=File (2× FLAC queue)" else "mode=Sine"
     }
 
     private fun onStartPlayback() {
         val eng = engine ?: return
         if (fileMode) {
-            val a = wav440
-            val b = wav880
+            val a = flac440
+            val b = flac880
             if (a == null || b == null) {
-                status = "WAV assets missing"
+                status = "FLAC assets missing"
                 return
             }
             val modeCode = eng.setPlayMode(HowlEngine.PlayMode.File)
@@ -287,7 +287,7 @@ private fun PlayerScreen(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = if (fileMode) "Queue handoff" else "440 Hz sine",
+            text = if (fileMode) "FLAC queue" else "440 Hz sine",
             color = muted,
             fontSize = 16.sp,
             modifier = Modifier.padding(top = 8.dp),
@@ -301,7 +301,7 @@ private fun PlayerScreen(
                 contentColor = muted,
             ),
         ) {
-            Text(if (fileMode) "Switch to Sine" else "Switch to WAV queue")
+            Text(if (fileMode) "Switch to Sine" else "Switch to FLAC queue")
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row {

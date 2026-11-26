@@ -10,6 +10,7 @@
 namespace howl {
 
 class PcmRingBuffer;
+class ProcessGraph;
 
 enum class OutputMode : int32_t {
     Sine = 0,
@@ -17,10 +18,11 @@ enum class OutputMode : int32_t {
 };
 
 /**
- * Oboe output with sine or PCM-ring source (Phase 2.2/2.3).
+ * Oboe output with sine or PCM-ring source (Phase 2.2/2.3 + 3.1 graph).
  *
  * Pause: callback outputs silence and does not pop the ring (no I/O).
  * Position: optional atomic incremented by frames successfully popped.
+ * Ring path: pop → ProcessGraph::process (identity/bypass safe).
  */
 class AudioOutput {
 public:
@@ -34,6 +36,12 @@ public:
 
     /** Non-owning; callback increments by frames popped (ring mode). */
     void setPositionFrames(std::atomic<int64_t>* positionFrames);
+
+    /**
+     * Non-owning DSP graph. Must outlive the stream; prepare() before start.
+     * Null = raw path (no graph).
+     */
+    void setProcessGraph(ProcessGraph* graph);
 
     /** When true, callback writes silence and does not consume the ring. */
     void setPaused(bool paused);

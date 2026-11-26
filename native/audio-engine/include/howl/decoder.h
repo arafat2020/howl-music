@@ -57,4 +57,13 @@ protected:
 /** Factory for the Phase 2.1 WAV implementation. */
 std::unique_ptr<IDecoder> createWavDecoder();
 
+/** Factory for the Phase 2.4 FLAC implementation (dr_flac). */
+std::unique_ptr<IDecoder> createFlacDecoder();
+
+/**
+ * Open a decoder by sniffing magic bytes / extension (Phase 2.4).
+ * On failure returns nullptr and writes Status to statusOut when non-null.
+ */
+std::unique_ptr<IDecoder> openDecoder(const char* path, Status* statusOut = nullptr);
+
 }  // namespace howl

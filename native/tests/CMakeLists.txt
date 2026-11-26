@@ -21,11 +21,14 @@ add_executable(howl_native_tests
     test_wav_decoder.cpp
     test_pcm_ring_buffer.cpp
     test_queue_controller.cpp
+    test_flac_decoder.cpp
+    test_process_graph.cpp
 )
 
 target_link_libraries(howl_native_tests
     PRIVATE
         howl_audio_engine
+        howl_audio_juce
         GTest::gtest_main
 )
 
