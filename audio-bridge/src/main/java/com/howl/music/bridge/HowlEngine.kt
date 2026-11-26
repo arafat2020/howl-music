@@ -3,9 +3,9 @@ package com.howl.music.bridge
 import java.io.Closeable
 
 /**
- * Control-thread façade over the native Engine (Phase 2.3).
+ * Control-thread façade over the native Engine (Phase 2.5).
  *
- * Call transport APIs from one control thread only — never from an audio callback.
+ * Call transport/queue APIs from one control thread only — never from an audio callback.
  */
 class HowlEngine private constructor(
     private var handle: Long,
@@ -14,6 +14,12 @@ class HowlEngine private constructor(
     enum class PlayMode(val nativeCode: Int) {
         Sine(0),
         File(1),
+    }
+
+    enum class RepeatMode(val nativeCode: Int) {
+        None(0),
+        One(1),
+        All(2),
     }
 
     val isClosed: Boolean
@@ -41,6 +47,30 @@ class HowlEngine private constructor(
         nativeSetPlayMode(requireHandle(), mode.nativeCode)
 
     fun load(path: String): Int = nativeLoad(requireHandle(), path)
+
+    fun enqueue(path: String): Int = nativeEnqueue(requireHandle(), path)
+
+    fun clearQueue(): Int = nativeClearQueue(requireHandle())
+
+    fun playAt(index: Int): Int = nativePlayAt(requireHandle(), index)
+
+    fun next(): Int = nativeNext(requireHandle())
+
+    fun previous(): Int = nativePrevious(requireHandle())
+
+    fun setRepeatMode(mode: RepeatMode): Int =
+        nativeSetRepeatMode(requireHandle(), mode.nativeCode)
+
+    fun queueSize(): Int = nativeQueueSize(requireHandle())
+
+    fun currentIndex(): Int = nativeCurrentIndex(requireHandle())
+
+    fun repeatMode(): RepeatMode =
+        when (nativeRepeatMode(requireHandle())) {
+            RepeatMode.One.nativeCode -> RepeatMode.One
+            RepeatMode.All.nativeCode -> RepeatMode.All
+            else -> RepeatMode.None
+        }
 
     fun playMode(): PlayMode =
         if (nativePlayMode(requireHandle()) == PlayMode.File.nativeCode) {
@@ -149,6 +179,15 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeState(handle: Long): Int
         @JvmStatic private external fun nativeSetPlayMode(handle: Long, mode: Int): Int
         @JvmStatic private external fun nativeLoad(handle: Long, path: String): Int
+        @JvmStatic private external fun nativeEnqueue(handle: Long, path: String): Int
+        @JvmStatic private external fun nativeClearQueue(handle: Long): Int
+        @JvmStatic private external fun nativePlayAt(handle: Long, index: Int): Int
+        @JvmStatic private external fun nativeNext(handle: Long): Int
+        @JvmStatic private external fun nativePrevious(handle: Long): Int
+        @JvmStatic private external fun nativeSetRepeatMode(handle: Long, mode: Int): Int
+        @JvmStatic private external fun nativeQueueSize(handle: Long): Int
+        @JvmStatic private external fun nativeCurrentIndex(handle: Long): Int
+        @JvmStatic private external fun nativeRepeatMode(handle: Long): Int
         @JvmStatic private external fun nativePlayMode(handle: Long): Int
         @JvmStatic private external fun nativeGetTransport(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeGetDiagnostics(handle: Long, out: LongArray): Int

@@ -4,6 +4,7 @@ add_library(howl_audio_engine STATIC
     src/wav_decoder.cpp
     src/pcm_ring_buffer.cpp
     src/decode_worker.cpp
+    src/queue_controller.cpp
 )
 
 target_include_directories(howl_audio_engine

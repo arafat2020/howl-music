@@ -91,6 +91,90 @@ Java_com_howl_music_bridge_HowlEngine_nativePlayMode(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeEnqueue(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jlong handle,
+    jstring path) {
+    if (path == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    const char* utf = env->GetStringUTFChars(path, nullptr);
+    if (utf == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    const int32_t code = howl_engine_enqueue(reinterpret_cast<HowlEngineHandle*>(handle), utf);
+    env->ReleaseStringUTFChars(path, utf);
+    return code;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeClearQueue(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_clear_queue(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativePlayAt(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle,
+    jint index) {
+    return howl_engine_play_at(reinterpret_cast<HowlEngineHandle*>(handle), index);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeNext(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_next(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativePrevious(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_previous(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeSetRepeatMode(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle,
+    jint mode) {
+    return howl_engine_set_repeat_mode(reinterpret_cast<HowlEngineHandle*>(handle), mode);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeQueueSize(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_queue_size(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeCurrentIndex(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_current_index(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeRepeatMode(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_repeat_mode(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
 Java_com_howl_music_bridge_HowlEngine_nativePause(
     JNIEnv* /* env */,
     jobject /* thiz */,

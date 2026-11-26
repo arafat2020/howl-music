@@ -3,7 +3,7 @@
 **Milestone:** 2 — Playback pipeline  
 **Priority:** Foundational  
 **Depends on:** 2.2  
-**Status:** Implemented — awaiting your approval
+**Status:** Approved
 
 ## Objective
 

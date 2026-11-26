@@ -1,6 +1,7 @@
 #pragma once
 
 #include "howl/diagnostics.h"
+#include "howl/queue.h"
 #include "howl/status.h"
 #include "howl/transport.h"
 
@@ -13,6 +14,7 @@
 #include "howl/audio_output.h"
 #include "howl/decode_worker.h"
 #include "howl/pcm_ring_buffer.h"
+#include <thread>
 #endif
 
 namespace howl {
@@ -23,10 +25,10 @@ enum class PlayMode : int32_t {
 };
 
 /**
- * Playback engine (Phase 2.3: transport + ring path).
+ * Playback engine (Phase 2.5: queue handoff + transport).
  *
- * Control thread: prepare/start/stop/load/pause/resume/seek/transport/diagnostics.
- * Audio callback: pop or silence only — never decode, seek, or flush.
+ * Control thread: prepare/start/stop/load/queue/pause/resume/seek/transport.
+ * Audio callback: pop or silence only — never decode, seek, flush, or queue ops.
  */
 class Engine final {
 public:
@@ -44,7 +46,24 @@ public:
     Status stop();
 
     Status setPlayMode(PlayMode mode);
+
+    /**
+     * Probe path, clear queue, enqueue as sole item (backward-compatible).
+     * Invalid while Running/Stopping.
+     */
     Status load(const char* path);
+
+    /** Append a validated stereo WAV path. OK while Running. */
+    Status enqueue(const char* path);
+    Status clearQueue();
+    Status playAt(int index);
+    Status next();
+    Status previous();
+    Status setRepeatMode(RepeatMode mode);
+
+    int queueSize() const;
+    int currentIndex() const;
+    RepeatMode repeatMode() const;
 
     /** Pause output (silence, no ring pop). Engine stays Running. */
     Status pause();
@@ -67,10 +86,22 @@ public:
 private:
     Engine();
 
+    Status probeAndStore(const char* path);
+    Status syncLoadedFromQueue();
+
+#if defined(__ANDROID__)
+    Status changeTrack(const std::string& path);
+    Status handleEofAdvance();
+    void startQueueWatch();
+    void stopQueueWatch();
+    void queueWatchMain();
+#endif
+
     mutable std::mutex mutex_;
     EngineState state_{EngineState::Idle};
     PlayMode playMode_{PlayMode::Sine};
     std::string loadedPath_;
+    QueueController queue_;
     std::atomic<bool> paused_{false};
     std::atomic<int64_t> positionFrames_{0};
     int64_t durationFrames_{0};
@@ -83,6 +114,10 @@ private:
     std::unique_ptr<PcmRingBuffer> ring_;
     std::unique_ptr<DecodeWorker> worker_;
     std::unique_ptr<AudioOutput> output_;
+
+    std::thread queueWatchThread_;
+    std::atomic<bool> queueWatchRunning_{false};
+    std::atomic<bool> trackChanging_{false};
 #endif
 };
 
@@ -104,6 +139,16 @@ int32_t howl_engine_state(HowlEngineHandle* engine);
 int32_t howl_engine_set_play_mode(HowlEngineHandle* engine, int32_t mode);
 int32_t howl_engine_load(HowlEngineHandle* engine, const char* path);
 int32_t howl_engine_play_mode(HowlEngineHandle* engine);
+
+int32_t howl_engine_enqueue(HowlEngineHandle* engine, const char* path);
+int32_t howl_engine_clear_queue(HowlEngineHandle* engine);
+int32_t howl_engine_play_at(HowlEngineHandle* engine, int32_t index);
+int32_t howl_engine_next(HowlEngineHandle* engine);
+int32_t howl_engine_previous(HowlEngineHandle* engine);
+int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode);
+int32_t howl_engine_queue_size(HowlEngineHandle* engine);
+int32_t howl_engine_current_index(HowlEngineHandle* engine);
+int32_t howl_engine_repeat_mode(HowlEngineHandle* engine);
 
 int32_t howl_engine_pause(HowlEngineHandle* engine);
 int32_t howl_engine_resume(HowlEngineHandle* engine);

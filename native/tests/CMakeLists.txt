@@ -20,6 +20,7 @@ add_executable(howl_native_tests
     test_sine_osc.cpp
     test_wav_decoder.cpp
     test_pcm_ring_buffer.cpp
+    test_queue_controller.cpp
 )
 
 target_link_libraries(howl_native_tests

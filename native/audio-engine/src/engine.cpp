@@ -2,6 +2,7 @@
 #include "howl/wav_decoder.h"
 
 #if defined(__ANDROID__)
+#include <chrono>
 #include <thread>
 #include <vector>
 #endif
@@ -19,6 +20,37 @@ Engine::Engine() = default;
 
 Engine::~Engine() {
     (void)stop();
+}
+
+Status Engine::probeAndStore(const char* path) {
+    auto probe = createWavDecoder();
+    const Status opened = probe->open(path);
+    if (opened != Status::Ok) {
+        return opened;
+    }
+    const AudioFormat fmt = probe->format();
+    durationFrames_ = probe->frameCount();
+    fileSampleRate_ = fmt.sampleRate;
+    probe->close();
+
+    if (fmt.channelCount != 2) {
+        durationFrames_ = 0;
+        fileSampleRate_ = 0;
+        return Status::UnsupportedFormat;
+    }
+    loadedPath_ = path;
+    return Status::Ok;
+}
+
+Status Engine::syncLoadedFromQueue() {
+    const QueueItem* item = queue_.current();
+    if (item == nullptr) {
+        loadedPath_.clear();
+        durationFrames_ = 0;
+        fileSampleRate_ = 0;
+        return Status::InvalidState;
+    }
+    return probeAndStore(item->path.c_str());
 }
 
 Status Engine::prepare() {
@@ -54,24 +86,165 @@ Status Engine::load(const char* path) {
         return Status::InvalidState;
     }
 
+    const Status probed = probeAndStore(path);
+    if (probed != Status::Ok) {
+        return probed;
+    }
+
+    queue_.clear();
+    (void)queue_.enqueue(path);
+    return Status::Ok;
+}
+
+Status Engine::enqueue(const char* path) {
+    if (path == nullptr || path[0] == '\0') {
+        return Status::NullHandle;
+    }
+
     auto probe = createWavDecoder();
     const Status opened = probe->open(path);
     if (opened != Status::Ok) {
         return opened;
     }
     const AudioFormat fmt = probe->format();
-    durationFrames_ = probe->frameCount();
-    fileSampleRate_ = fmt.sampleRate;
     probe->close();
-
     if (fmt.channelCount != 2) {
-        durationFrames_ = 0;
-        fileSampleRate_ = 0;
         return Status::UnsupportedFormat;
     }
 
-    loadedPath_ = path;
+    std::lock_guard<std::mutex> lock(mutex_);
+    const Status st = queue_.enqueue(path);
+    if (st != Status::Ok) {
+        return st;
+    }
+    if (loadedPath_.empty() && state_ != EngineState::Running &&
+        state_ != EngineState::Stopping) {
+        (void)syncLoadedFromQueue();
+    }
     return Status::Ok;
+}
+
+Status Engine::clearQueue() {
+    if (state() == EngineState::Running) {
+        const Status stopSt = stop();
+        if (stopSt != Status::Ok) {
+            return stopSt;
+        }
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    queue_.clear();
+    loadedPath_.clear();
+    durationFrames_ = 0;
+    fileSampleRate_ = 0;
+    return Status::Ok;
+}
+
+Status Engine::playAt(int index) {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const Status st = queue_.setCurrentIndex(index);
+        if (st != Status::Ok) {
+            return st;
+        }
+        const Status sync = syncLoadedFromQueue();
+        if (sync != Status::Ok) {
+            return sync;
+        }
+        path = loadedPath_;
+#if defined(__ANDROID__)
+        if (state_ != EngineState::Running || playMode_ != PlayMode::File) {
+            return Status::Ok;
+        }
+#else
+        (void)path;
+        return Status::Ok;
+#endif
+    }
+#if defined(__ANDROID__)
+    return changeTrack(path);
+#else
+    return Status::Ok;
+#endif
+}
+
+Status Engine::next() {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Explicit next always moves forward (even under Repeat::One).
+        const bool haveItem = queue_.advanceNext(/*honorRepeatOne=*/false);
+        if (!haveItem) {
+            return Status::InvalidState;
+        }
+        const Status sync = syncLoadedFromQueue();
+        if (sync != Status::Ok) {
+            return sync;
+        }
+        path = loadedPath_;
+#if defined(__ANDROID__)
+        if (state_ != EngineState::Running || playMode_ != PlayMode::File) {
+            return Status::Ok;
+        }
+#else
+        (void)path;
+        return Status::Ok;
+#endif
+    }
+#if defined(__ANDROID__)
+    return changeTrack(path);
+#else
+    return Status::Ok;
+#endif
+}
+
+Status Engine::previous() {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!queue_.advancePrevious()) {
+            return Status::InvalidState;
+        }
+        const Status sync = syncLoadedFromQueue();
+        if (sync != Status::Ok) {
+            return sync;
+        }
+        path = loadedPath_;
+#if defined(__ANDROID__)
+        if (state_ != EngineState::Running || playMode_ != PlayMode::File) {
+            return Status::Ok;
+        }
+#else
+        (void)path;
+        return Status::Ok;
+#endif
+    }
+#if defined(__ANDROID__)
+    return changeTrack(path);
+#else
+    return Status::Ok;
+#endif
+}
+
+Status Engine::setRepeatMode(RepeatMode mode) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    queue_.setRepeatMode(mode);
+    return Status::Ok;
+}
+
+int Engine::queueSize() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return static_cast<int>(queue_.size());
+}
+
+int Engine::currentIndex() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return queue_.currentIndex();
+}
+
+RepeatMode Engine::repeatMode() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return queue_.repeatMode();
 }
 
 PlayMode Engine::playMode() const {
@@ -95,10 +268,22 @@ Status Engine::start() {
             state_ = EngineState::Prepared;
         }
         mode = playMode_;
-        path = loadedPath_;
-        if (mode == PlayMode::File && path.empty()) {
-            state_ = EngineState::Idle;
-            return Status::InvalidState;
+        if (mode == PlayMode::File) {
+            if (!queue_.empty()) {
+                if (queue_.current() == nullptr) {
+                    (void)queue_.setCurrentIndex(0);
+                }
+                const Status sync = syncLoadedFromQueue();
+                if (sync != Status::Ok) {
+                    state_ = EngineState::Idle;
+                    return sync;
+                }
+            }
+            path = loadedPath_;
+            if (path.empty()) {
+                state_ = EngineState::Idle;
+                return Status::InvalidState;
+            }
         }
     }
 
@@ -164,6 +349,9 @@ Status Engine::start() {
             worker_ = std::move(worker);
             output_ = std::move(output);
             state_ = EngineState::Running;
+            if (mode == PlayMode::File) {
+                startQueueWatch();
+            }
             return Status::Ok;
         }
     }
@@ -194,6 +382,8 @@ Status Engine::start() {
 
 Status Engine::stop() {
 #if defined(__ANDROID__)
+    stopQueueWatch();
+
     std::unique_ptr<DecodeWorker> toJoin;
     std::unique_ptr<AudioOutput> toStop;
     std::unique_ptr<PcmRingBuffer> toDrop;
@@ -222,6 +412,7 @@ Status Engine::stop() {
     std::lock_guard<std::mutex> lock(mutex_);
     state_ = EngineState::Idle;
     positionFrames_.store(0, std::memory_order_relaxed);
+    trackChanging_.store(false, std::memory_order_release);
     return Status::Ok;
 #else
     std::lock_guard<std::mutex> lock(mutex_);
@@ -290,7 +481,6 @@ Status Engine::resume() {
 
 Status Engine::seekFrames(int64_t frameIndex) {
 #if defined(__ANDROID__)
-    // Pause pop + push, flush ring, seek decoder, prefill, restore pause state.
     bool wasPaused = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -308,7 +498,6 @@ Status Engine::seekFrames(int64_t frameIndex) {
         worker_->setPushEnabled(false);
     }
 
-    // Let in-flight callback observe pause before we clear the ring.
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     {
@@ -397,8 +586,199 @@ EngineDiagnostics Engine::diagnostics() const {
 }
 
 const char* Engine::version() {
-    return "howl_engine/0.5.0-transport";
+    return "howl_engine/0.6.0-queue";
 }
+
+#if defined(__ANDROID__)
+
+Status Engine::changeTrack(const std::string& path) {
+    bool expected = false;
+    if (!trackChanging_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        return Status::InvalidState;
+    }
+
+    bool wasPaused = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != EngineState::Running || playMode_ != PlayMode::File || !output_ ||
+            !ring_) {
+            trackChanging_.store(false, std::memory_order_release);
+            return Status::InvalidState;
+        }
+        wasPaused = paused_.load(std::memory_order_acquire);
+        output_->setPaused(true);
+        if (worker_) {
+            worker_->setPushEnabled(false);
+        }
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    std::unique_ptr<DecodeWorker> oldWorker;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != EngineState::Running || !ring_ || !output_) {
+            trackChanging_.store(false, std::memory_order_release);
+            return Status::InvalidState;
+        }
+        oldWorker = std::move(worker_);
+        ring_->clear();
+    }
+    if (oldWorker) {
+        oldWorker->stop();
+        oldWorker.reset();
+    }
+
+    auto decoder = createWavDecoder();
+    const Status opened = decoder->open(path.c_str());
+    if (opened != Status::Ok) {
+        trackChanging_.store(false, std::memory_order_release);
+        (void)stop();
+        return opened;
+    }
+
+    const AudioFormat fmt = decoder->format();
+    if (fmt.channelCount != 2) {
+        trackChanging_.store(false, std::memory_order_release);
+        (void)stop();
+        return Status::UnsupportedFormat;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != EngineState::Running || !ring_ || !output_) {
+            trackChanging_.store(false, std::memory_order_release);
+            return Status::InvalidState;
+        }
+
+        // Reopen Oboe only when rate/channels no longer match the open stream.
+        if (fmt.sampleRate != output_->sampleRate() ||
+            fmt.channelCount != output_->channelCount()) {
+            (void)output_->stop();
+            output_ = std::make_unique<AudioOutput>();
+            output_->setOutputMode(OutputMode::Ring, ring_.get());
+            output_->setPositionFrames(&positionFrames_);
+            const Status outSt = output_->start();
+            if (outSt != Status::Ok) {
+                trackChanging_.store(false, std::memory_order_release);
+                state_ = EngineState::Idle;
+                return outSt;
+            }
+            if (fmt.sampleRate != output_->sampleRate()) {
+                (void)output_->stop();
+                output_.reset();
+                trackChanging_.store(false, std::memory_order_release);
+                state_ = EngineState::Idle;
+                return Status::UnsupportedFormat;
+            }
+        }
+
+        durationFrames_ = decoder->frameCount();
+        fileSampleRate_ = fmt.sampleRate;
+        loadedPath_ = path;
+        positionFrames_.store(0, std::memory_order_relaxed);
+
+        auto worker = std::make_unique<DecodeWorker>();
+        const Status wSt = worker->start(std::move(decoder), ring_.get());
+        if (wSt != Status::Ok) {
+            trackChanging_.store(false, std::memory_order_release);
+            (void)output_->stop();
+            output_.reset();
+            state_ = EngineState::Idle;
+            return wSt;
+        }
+        (void)worker->prefill(8);
+        worker_ = std::move(worker);
+
+        if (!wasPaused) {
+            worker_->setPushEnabled(true);
+            output_->setPaused(false);
+            paused_.store(false, std::memory_order_release);
+        } else {
+            worker_->setPushEnabled(false);
+            output_->setPaused(true);
+            paused_.store(true, std::memory_order_release);
+        }
+    }
+
+    trackChanging_.store(false, std::memory_order_release);
+    return Status::Ok;
+}
+
+Status Engine::handleEofAdvance() {
+    RepeatMode mode;
+    std::string path;
+    bool playNext = false;
+    bool repeatOne = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != EngineState::Running || playMode_ != PlayMode::File) {
+            return Status::InvalidState;
+        }
+        mode = queue_.repeatMode();
+        if (mode == RepeatMode::One) {
+            repeatOne = true;
+        } else {
+            playNext = queue_.advanceNext();
+            if (playNext) {
+                const Status sync = syncLoadedFromQueue();
+                if (sync != Status::Ok) {
+                    return sync;
+                }
+                path = loadedPath_;
+            }
+        }
+    }
+
+    if (repeatOne) {
+        return seekFrames(0);
+    }
+    if (playNext) {
+        return changeTrack(path);
+    }
+    // Repeat::None at end of queue — stop cleanly.
+    return stop();
+}
+
+void Engine::startQueueWatch() {
+    stopQueueWatch();
+    queueWatchRunning_.store(true, std::memory_order_release);
+    queueWatchThread_ = std::thread([this] { queueWatchMain(); });
+}
+
+void Engine::stopQueueWatch() {
+    queueWatchRunning_.store(false, std::memory_order_release);
+    if (queueWatchThread_.joinable()) {
+        // EOF → stop() may run on this thread; never join ourselves.
+        if (std::this_thread::get_id() != queueWatchThread_.get_id()) {
+            queueWatchThread_.join();
+        } else {
+            queueWatchThread_.detach();
+        }
+    }
+}
+
+void Engine::queueWatchMain() {
+    while (queueWatchRunning_.load(std::memory_order_acquire)) {
+        bool shouldAdvance = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (state_ == EngineState::Running && playMode_ == PlayMode::File && worker_ &&
+                ring_ && !paused_.load(std::memory_order_acquire) &&
+                !trackChanging_.load(std::memory_order_acquire)) {
+                if (worker_->reachedEof() && ring_->availableRead() == 0) {
+                    shouldAdvance = true;
+                }
+            }
+        }
+        if (shouldAdvance) {
+            (void)handleEofAdvance();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+}
+
+#endif  // __ANDROID__
 
 }  // namespace howl
 
@@ -465,6 +845,70 @@ int32_t howl_engine_play_mode(HowlEngineHandle* engine) {
         return static_cast<int32_t>(howl::PlayMode::Sine);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->playMode());
+}
+
+int32_t howl_engine_enqueue(HowlEngineHandle* engine, const char* path) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->enqueue(path));
+}
+
+int32_t howl_engine_clear_queue(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->clearQueue());
+}
+
+int32_t howl_engine_play_at(HowlEngineHandle* engine, int32_t index) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->playAt(index));
+}
+
+int32_t howl_engine_next(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->next());
+}
+
+int32_t howl_engine_previous(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->previous());
+}
+
+int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setRepeatMode(
+        static_cast<howl::RepeatMode>(mode)));
+}
+
+int32_t howl_engine_queue_size(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return 0;
+    }
+    return reinterpret_cast<howl::Engine*>(engine)->queueSize();
+}
+
+int32_t howl_engine_current_index(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return -1;
+    }
+    return reinterpret_cast<howl::Engine*>(engine)->currentIndex();
+}
+
+int32_t howl_engine_repeat_mode(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::RepeatMode::None);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->repeatMode());
 }
 
 int32_t howl_engine_pause(HowlEngineHandle* engine) {

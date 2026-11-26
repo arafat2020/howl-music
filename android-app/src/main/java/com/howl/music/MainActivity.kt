@@ -36,7 +36,7 @@ import kotlinx.coroutines.delay
 import java.io.File
 
 /**
- * Phase 2.3: sine/WAV playback with pause / seek / position.
+ * Phase 2.5: two-track queue, next/prev, repeat, EOF auto-advance.
  */
 class MainActivity : ComponentActivity() {
 
@@ -48,7 +48,9 @@ class MainActivity : ComponentActivity() {
     private var fileMode by mutableStateOf(true)
     private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
     private var transportText by mutableStateOf(TransportSnapshot.Empty.formatLine())
-    private var wavPath: String? = null
+    private var queueText by mutableStateOf("queue —")
+    private var wav440: String? = null
+    private var wav880: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,7 +58,8 @@ class MainActivity : ComponentActivity() {
 
         status = HowlEngine.libraryError() ?: try {
             engine = HowlEngine.create()
-            wavPath = copyAssetWav()
+            wav440 = copyAssetWav("sine_440_16bit_stereo.wav")
+            wav880 = copyAssetWav("sine_880_16bit_stereo.wav")
             HowlEngine.version()
         } catch (t: Throwable) {
             "Create failed: ${t.message}"
@@ -71,6 +74,8 @@ class MainActivity : ComponentActivity() {
                         val t = eng.transport()
                         transportText = t.formatLine()
                         paused = t.paused
+                        running = t.playing
+                        queueText = formatQueue(eng)
                     }
                     if (!running) break
                     delay(250)
@@ -80,6 +85,7 @@ class MainActivity : ComponentActivity() {
             PlayerScreen(
                 status = status,
                 transport = transportText,
+                queue = queueText,
                 diagnostics = diagText,
                 running = running,
                 paused = paused,
@@ -91,6 +97,9 @@ class MainActivity : ComponentActivity() {
                 onPauseResume = ::onPauseResume,
                 onSeekStart = { seekTo(0) },
                 onSeekMid = ::seekToMid,
+                onPrev = ::onPrev,
+                onNext = ::onNext,
+                onCycleRepeat = ::onCycleRepeat,
             )
         }
     }
@@ -102,25 +111,38 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun copyAssetWav(): String {
-        val out = File(cacheDir, "sine_440_16bit_stereo.wav")
-        assets.open("sine_440_16bit_stereo.wav").use { input ->
+    private fun copyAssetWav(name: String): String {
+        val out = File(cacheDir, name)
+        assets.open(name).use { input ->
             out.outputStream().use { output -> input.copyTo(output) }
         }
         return out.absolutePath
     }
 
+    private fun formatQueue(eng: HowlEngine): String {
+        val idx = eng.currentIndex()
+        val size = eng.queueSize()
+        val rep = when (eng.repeatMode()) {
+            HowlEngine.RepeatMode.None -> "off"
+            HowlEngine.RepeatMode.One -> "one"
+            HowlEngine.RepeatMode.All -> "all"
+        }
+        return "track ${idx + 1}/$size  repeat=$rep"
+    }
+
     private fun onToggleMode() {
         if (running) return
         fileMode = !fileMode
-        status = if (fileMode) "mode=File (WAV ring)" else "mode=Sine"
+        status = if (fileMode) "mode=File (2-track queue)" else "mode=Sine"
     }
 
     private fun onStartPlayback() {
         val eng = engine ?: return
         if (fileMode) {
-            val path = wavPath ?: run {
-                status = "WAV asset missing"
+            val a = wav440
+            val b = wav880
+            if (a == null || b == null) {
+                status = "WAV assets missing"
                 return
             }
             val modeCode = eng.setPlayMode(HowlEngine.PlayMode.File)
@@ -128,11 +150,14 @@ class MainActivity : ComponentActivity() {
                 status = "setPlayMode=${eng.statusName(modeCode)}"
                 return
             }
-            val loadCode = eng.load(path)
-            if (loadCode != 0) {
-                status = "load=${eng.statusName(loadCode)}"
+            eng.clearQueue()
+            val e1 = eng.enqueue(a)
+            val e2 = eng.enqueue(b)
+            if (e1 != 0 || e2 != 0) {
+                status = "enqueue e1=${eng.statusName(e1)} e2=${eng.statusName(e2)}"
                 return
             }
+            eng.setRepeatMode(HowlEngine.RepeatMode.None)
         } else {
             val modeCode = eng.setPlayMode(HowlEngine.PlayMode.Sine)
             if (modeCode != 0) {
@@ -146,6 +171,7 @@ class MainActivity : ComponentActivity() {
         paused = false
         status = "start=${eng.statusName(code)} state=${eng.stateName()}"
         transportText = eng.transport().formatLine()
+        queueText = formatQueue(eng)
         diagText = eng.diagnostics().formatLines()
     }
 
@@ -156,6 +182,7 @@ class MainActivity : ComponentActivity() {
         paused = false
         status = "stop=${eng.statusName(code)} state=${eng.stateName()}"
         transportText = eng.transport().formatLine()
+        queueText = formatQueue(eng)
         diagText = eng.diagnostics().formatLines()
     }
 
@@ -186,12 +213,46 @@ class MainActivity : ComponentActivity() {
         val mid = eng.transport().durationMs / 2
         seekTo(mid)
     }
+
+    private fun onPrev() {
+        val eng = engine ?: return
+        if (!fileMode) return
+        val code = eng.previous()
+        status = "prev=${eng.statusName(code)}"
+        queueText = formatQueue(eng)
+        transportText = eng.transport().formatLine()
+        running = eng.transport().playing
+    }
+
+    private fun onNext() {
+        val eng = engine ?: return
+        if (!fileMode) return
+        val code = eng.next()
+        status = "next=${eng.statusName(code)}"
+        queueText = formatQueue(eng)
+        transportText = eng.transport().formatLine()
+        running = eng.transport().playing
+    }
+
+    private fun onCycleRepeat() {
+        val eng = engine ?: return
+        if (!fileMode) return
+        val next = when (eng.repeatMode()) {
+            HowlEngine.RepeatMode.None -> HowlEngine.RepeatMode.All
+            HowlEngine.RepeatMode.All -> HowlEngine.RepeatMode.One
+            HowlEngine.RepeatMode.One -> HowlEngine.RepeatMode.None
+        }
+        eng.setRepeatMode(next)
+        status = "repeat=${next.name.lowercase()}"
+        queueText = formatQueue(eng)
+    }
 }
 
 @Composable
 private fun PlayerScreen(
     status: String,
     transport: String,
+    queue: String,
     diagnostics: String,
     running: Boolean,
     paused: Boolean,
@@ -203,6 +264,9 @@ private fun PlayerScreen(
     onPauseResume: () -> Unit,
     onSeekStart: () -> Unit,
     onSeekMid: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onCycleRepeat: () -> Unit,
 ) {
     val background = Color(0xFF101014)
     val accent = Color(0xFFB7F34A)
@@ -223,7 +287,7 @@ private fun PlayerScreen(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = if (fileMode) "WAV transport" else "440 Hz sine",
+            text = if (fileMode) "Queue handoff" else "440 Hz sine",
             color = muted,
             fontSize = 16.sp,
             modifier = Modifier.padding(top = 8.dp),
@@ -237,7 +301,7 @@ private fun PlayerScreen(
                 contentColor = muted,
             ),
         ) {
-            Text(if (fileMode) "Switch to Sine" else "Switch to WAV")
+            Text(if (fileMode) "Switch to Sine" else "Switch to WAV queue")
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row {
@@ -277,6 +341,41 @@ private fun PlayerScreen(
         Spacer(modifier = Modifier.height(12.dp))
         Row {
             Button(
+                onClick = onPrev,
+                enabled = canControl && fileMode,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = muted.copy(alpha = 0.25f),
+                    contentColor = muted,
+                ),
+            ) {
+                Text("Prev")
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(
+                onClick = onNext,
+                enabled = canControl && fileMode,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = muted.copy(alpha = 0.25f),
+                    contentColor = muted,
+                ),
+            ) {
+                Text("Next")
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Button(
+                onClick = onCycleRepeat,
+                enabled = canControl && fileMode,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = muted.copy(alpha = 0.25f),
+                    contentColor = muted,
+                ),
+            ) {
+                Text("Repeat")
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Row {
+            Button(
                 onClick = onSeekStart,
                 enabled = canControl && running && fileMode,
                 colors = ButtonDefaults.buttonColors(
@@ -299,12 +398,20 @@ private fun PlayerScreen(
             }
         }
         Text(
-            text = transport,
+            text = queue,
             color = accent,
             fontSize = 14.sp,
             fontFamily = FontFamily.Monospace,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 20.dp),
+        )
+        Text(
+            text = transport,
+            color = accent.copy(alpha = 0.9f),
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
         )
         Text(
             text = status,
