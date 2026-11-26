@@ -1,5 +1,6 @@
 #pragma once
 
+#include "howl/diagnostics.h"
 #include "howl/status.h"
 
 #include <memory>
@@ -12,7 +13,7 @@
 namespace howl {
 
 /**
- * Playback engine (Phase 1.2: Oboe sine output on Android).
+ * Playback engine (Phase 1.3: Oboe sine + diagnostics snapshot).
  *
  * Ownership
  * - Prefer Engine::create() → std::unique_ptr<Engine>.
@@ -20,7 +21,7 @@ namespace howl {
  * - On Android, owns AudioOutput (Oboe stream) while Running.
  *
  * Threading policy (control thread)
- * - prepare/start/stop/state: control thread only — never from audio callback.
+ * - prepare/start/stop/state/diagnostics: control thread only — never from audio callback.
  * - Audio callback (inside AudioOutput) must not take Engine's mutex.
  */
 class Engine final {
@@ -39,6 +40,9 @@ public:
     Status stop();
 
     EngineState state() const;
+
+    /** Control-thread snapshot of stream/callback counters (zeros if idle). */
+    EngineDiagnostics diagnostics() const;
 
     static const char* version();
 
@@ -68,6 +72,9 @@ int32_t howl_engine_prepare(HowlEngineHandle* engine);
 int32_t howl_engine_start(HowlEngineHandle* engine);
 int32_t howl_engine_stop(HowlEngineHandle* engine);
 int32_t howl_engine_state(HowlEngineHandle* engine);
+
+/** Fills *out; returns 0 on success, NullHandle code if engine is null. */
+int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out);
 
 const char* howl_engine_version(void);
 const char* howl_engine_status_string(int32_t status);

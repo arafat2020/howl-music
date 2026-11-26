@@ -3,10 +3,10 @@ package com.howl.music.bridge
 import java.io.Closeable
 
 /**
- * Control-thread façade over the native Engine lifecycle (Phase 1.1).
+ * Control-thread façade over the native Engine (Phase 1.3).
  *
- * Call [prepare]/[start]/[stop] from one control thread only — never from an
- * audio callback (none exists yet; keep the rule now).
+ * Call [prepare]/[start]/[stop]/[diagnostics] from one control thread only —
+ * never from an audio callback.
  */
 class HowlEngine private constructor(
     private var handle: Long,
@@ -26,6 +26,27 @@ class HowlEngine private constructor(
     fun stateName(): String = nativeStateString(state())
 
     fun statusName(code: Int): String = nativeStatusString(code)
+
+    /**
+     * Snapshot of stream config + callback counters.
+     * Safe to call while running; cheap atomic loads on the native side.
+     */
+    fun diagnostics(): EngineDiagnostics {
+        val buf = LongArray(FIELD_COUNT)
+        val code = nativeGetDiagnostics(requireHandle(), buf)
+        if (code != 0) {
+            return EngineDiagnostics.Empty
+        }
+        return EngineDiagnostics(
+            sampleRate = buf[0].toInt(),
+            channelCount = buf[1].toInt(),
+            framesPerBurst = buf[2].toInt(),
+            framesPerCallback = buf[3].toInt(),
+            callbackCount = buf[4],
+            underrunCount = buf[5],
+            errorCount = buf[6],
+        )
+    }
 
     /**
      * create → start → start(fail) → stop → destroy style check for UI/debug.
@@ -63,6 +84,9 @@ class HowlEngine private constructor(
     }
 
     companion object {
+        /** Must match JNI packing in howl_jni_engine.cpp. */
+        private const val FIELD_COUNT = 7
+
         private val loadError: String? = try {
             System.loadLibrary("howl_engine")
             null
@@ -90,6 +114,7 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeStart(handle: Long): Int
         @JvmStatic private external fun nativeStop(handle: Long): Int
         @JvmStatic private external fun nativeState(handle: Long): Int
+        @JvmStatic private external fun nativeGetDiagnostics(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeVersion(): String
         @JvmStatic private external fun nativeStatusString(status: Int): String
         @JvmStatic private external fun nativeStateString(state: Int): String

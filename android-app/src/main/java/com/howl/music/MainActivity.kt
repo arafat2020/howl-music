@@ -17,20 +17,24 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.howl.music.bridge.EngineDiagnostics
 import com.howl.music.bridge.HowlEngine
+import kotlinx.coroutines.delay
 
 /**
- * Phase 1.2: start/stop a 440 Hz Oboe sine tone via the native engine.
+ * Phase 1.3: 440 Hz tone + polled engine diagnostics (~2 Hz).
  */
 class MainActivity : ComponentActivity() {
 
@@ -38,6 +42,7 @@ class MainActivity : ComponentActivity() {
 
     private var status by mutableStateOf("Loading…")
     private var running by mutableStateOf(false)
+    private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,8 +56,21 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
+            // Poll snapshots on the UI/control thread — never from the audio callback.
+            LaunchedEffect(running) {
+                while (true) {
+                    val eng = engine
+                    if (eng != null && !eng.isClosed) {
+                        diagText = eng.diagnostics().formatLines()
+                    }
+                    if (!running) break
+                    delay(500)
+                }
+            }
+
             ToneScreen(
                 status = status,
+                diagnostics = diagText,
                 running = running,
                 canControl = engine != null,
                 onStart = ::onStartTone,
@@ -75,6 +93,7 @@ class MainActivity : ComponentActivity() {
         val code = eng.start()
         running = code == 0
         status = "start=${eng.statusName(code)} state=${eng.stateName()}"
+        diagText = eng.diagnostics().formatLines()
     }
 
     private fun onStopTone() {
@@ -82,12 +101,14 @@ class MainActivity : ComponentActivity() {
         val code = eng.stop()
         running = false
         status = "stop=${eng.statusName(code)} state=${eng.stateName()}"
+        diagText = eng.diagnostics().formatLines()
     }
 }
 
 @Composable
 private fun ToneScreen(
     status: String,
+    diagnostics: String,
     running: Boolean,
     canControl: Boolean,
     onStart: () -> Unit,
@@ -112,7 +133,7 @@ private fun ToneScreen(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "440 Hz test tone (Oboe)",
+            text = "440 Hz + diagnostics",
             color = muted,
             fontSize = 16.sp,
             modifier = Modifier.padding(top = 8.dp),
@@ -147,6 +168,14 @@ private fun ToneScreen(
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 24.dp),
+        )
+        Text(
+            text = diagnostics.trimEnd(),
+            color = accent.copy(alpha = 0.85f),
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
         )
     }
 }

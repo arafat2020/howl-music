@@ -3,7 +3,7 @@
 **Milestone:** 1 — Audio foundation  
 **Priority:** Foundational  
 **Depends on:** 1.1  
-**Status:** Implemented — awaiting device listen + your approval
+**Status:** Approved
 
 ## Objective
 

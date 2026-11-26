@@ -131,8 +131,19 @@ EngineState Engine::state() const {
     return state_;
 }
 
+EngineDiagnostics Engine::diagnostics() const {
+    EngineDiagnostics out{};
+#if defined(__ANDROID__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (output_) {
+        output_->copyDiagnostics(out);
+    }
+#endif
+    return out;
+}
+
 const char* Engine::version() {
-    return "howl_engine/0.2.0-oboe-sine";
+    return "howl_engine/0.3.0-diagnostics";
 }
 
 }  // namespace howl
@@ -178,6 +189,22 @@ int32_t howl_engine_state(HowlEngineHandle* engine) {
         return static_cast<int32_t>(howl::EngineState::Idle);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->state());
+}
+
+int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out) {
+    if (engine == nullptr || out == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    const howl::EngineDiagnostics snap =
+        reinterpret_cast<howl::Engine*>(engine)->diagnostics();
+    out->sample_rate = snap.sample_rate;
+    out->channel_count = snap.channel_count;
+    out->frames_per_burst = snap.frames_per_burst;
+    out->frames_per_callback = snap.frames_per_callback;
+    out->callback_count = snap.callback_count;
+    out->underrun_count = snap.underrun_count;
+    out->error_count = snap.error_count;
+    return static_cast<int32_t>(howl::Status::Ok);
 }
 
 const char* howl_engine_version(void) {

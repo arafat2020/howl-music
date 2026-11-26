@@ -2,8 +2,10 @@
 
 #include "howl/engine.h"
 
+#include <cstdint>
+
 /**
- * Phase 1.1 — thin JNI over Engine lifecycle C API.
+ * Phase 1.3 — thin JNI over Engine lifecycle + diagnostics C API.
  * Package: com.howl.music.bridge.HowlEngine
  */
 extern "C" {
@@ -51,6 +53,39 @@ Java_com_howl_music_bridge_HowlEngine_nativeState(
     jobject /* thiz */,
     jlong handle) {
     return howl_engine_state(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeGetDiagnostics(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jlong handle,
+    jlongArray out) {
+    if (out == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    const jsize len = env->GetArrayLength(out);
+    if (len < 7) {
+        return static_cast<jint>(howl::Status::InvalidState);
+    }
+
+    HowlEngineDiagnostics snap{};
+    const int32_t code =
+        howl_engine_get_diagnostics(reinterpret_cast<HowlEngineHandle*>(handle), &snap);
+    if (code != 0) {
+        return code;
+    }
+
+    jlong buf[7];
+    buf[0] = snap.sample_rate;
+    buf[1] = snap.channel_count;
+    buf[2] = snap.frames_per_burst;
+    buf[3] = snap.frames_per_callback;
+    buf[4] = snap.callback_count;
+    buf[5] = snap.underrun_count;
+    buf[6] = snap.error_count;
+    env->SetLongArrayRegion(out, 0, 7, buf);
+    return code;
 }
 
 JNIEXPORT jstring JNICALL

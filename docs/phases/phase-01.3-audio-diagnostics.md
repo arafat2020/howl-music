@@ -3,7 +3,7 @@
 **Milestone:** 1 — Audio foundation  
 **Priority:** Foundational  
 **Depends on:** 1.2  
-**Status:** Not started
+**Status:** Implemented — awaiting your approval
 
 ## Objective
 
@@ -65,10 +65,10 @@ audio-bridge/.../EngineDiagnostics.kt
 
 ## Acceptance criteria
 
-- [ ] Diagnostics readable without blocking audio.
-- [ ] Values match stream configuration.
-- [ ] No log/alloc in audio callback for this feature.
-- [ ] Documented baseline on at least one physical device.
+- [x] Diagnostics readable without blocking audio.
+- [x] Values match stream configuration.
+- [x] No log/alloc in audio callback for this feature.
+- [ ] Documented baseline on at least one physical device. *(emulator baseline below; physical still open)*
 
 ## Review checklist
 
@@ -85,12 +85,21 @@ audio-bridge/.../EngineDiagnostics.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | `EngineDiagnostics` POD; atomics in Oboe callback (`callbackCount`, `lastFramesPerCallback`, `underrunCount` via `getXRunCount`, `errorCount` via error callback); `Engine::diagnostics()` + C/JNI/Kotlin snapshot; Compose debug text polled at 500 ms while running. |
+| Files created/modified | `diagnostics.h`, `audio_output.*`, `engine.*`, `howl_jni_engine.cpp`, `HowlEngine.kt`, `EngineDiagnostics.kt`, `MainActivity.kt`, host test, docs. |
+| Tests executed | Host `howl_engine_lifecycle_test` PASS (`0.3.0-diagnostics`). `installDebug` on Pixel_API_36. UI: `start=Ok`, `rate=48000 ch=2 burst=960 cbFrames=504`, callbacks rising (325→732), xruns=0. |
+| Results | Snapshot path works without JNI-from-callback. Emulator baseline recorded. |
+| Known limitations | Physical-device baseline not yet documented. Emulator xrun counts are not meaningful. |
+| Decisions made | UI polls at **2 Hz** (`delay(500)`). Pack snapshot over `LongArray(7)` JNI. Version `howl_engine/0.3.0-diagnostics`. Authoritative: sample rate / channels / framesPerBurst from stream at open; framesPerCallback + callbackCount from our atomics; underruns from Oboe `getXRunCount()`. |
 | Next phase | 1.4 — GoogleTest harness |
+
+### Emulator baseline (Pixel_API_36)
+
+```text
+rate=48000 Hz  ch=2
+burst=960  cbFrames=504
+callbacks=rising
+xruns=0  errors=0
+```
 
 **Approval required before Phase 1.4.**

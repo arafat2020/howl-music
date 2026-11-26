@@ -18,6 +18,13 @@ int main() {
     assert(engine->start() == Status::Ok);
     assert(engine->state() == EngineState::Running);
 
+    // Host build has no Oboe — diagnostics stay zero.
+    {
+        const auto d = engine->diagnostics();
+        assert(d.sample_rate == 0);
+        assert(d.callback_count == 0);
+    }
+
     // Double-start must fail cleanly.
     assert(engine->start() == Status::AlreadyRunning);
     assert(engine->state() == EngineState::Running);
