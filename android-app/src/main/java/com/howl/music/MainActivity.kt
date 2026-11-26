@@ -32,9 +32,10 @@ import androidx.compose.ui.unit.sp
 import com.howl.music.bridge.EngineDiagnostics
 import com.howl.music.bridge.HowlEngine
 import kotlinx.coroutines.delay
+import java.io.File
 
 /**
- * Phase 1.3: 440 Hz tone + polled engine diagnostics (~2 Hz).
+ * Phase 2.2: sine or WAV→ring→Oboe, with polled diagnostics.
  */
 class MainActivity : ComponentActivity() {
 
@@ -42,7 +43,9 @@ class MainActivity : ComponentActivity() {
 
     private var status by mutableStateOf("Loading…")
     private var running by mutableStateOf(false)
+    private var fileMode by mutableStateOf(false)
     private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
+    private var wavPath: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,13 +53,13 @@ class MainActivity : ComponentActivity() {
 
         status = HowlEngine.libraryError() ?: try {
             engine = HowlEngine.create()
+            wavPath = copyAssetWav()
             HowlEngine.version()
         } catch (t: Throwable) {
             "Create failed: ${t.message}"
         }
 
         setContent {
-            // Poll snapshots on the UI/control thread — never from the audio callback.
             LaunchedEffect(running) {
                 while (true) {
                     val eng = engine
@@ -72,31 +75,71 @@ class MainActivity : ComponentActivity() {
                 status = status,
                 diagnostics = diagText,
                 running = running,
+                fileMode = fileMode,
                 canControl = engine != null,
-                onStart = ::onStartTone,
-                onStop = ::onStopTone,
+                onToggleMode = ::onToggleMode,
+                onStart = ::onStartPlayback,
+                onStop = ::onStopPlayback,
             )
         }
     }
 
     override fun onDestroy() {
-        // Stop tone only when the activity is finishing — not on every onStop
-        // (volume UI / focus changes were killing the stream mid-test).
-        onStopTone()
+        onStopPlayback()
         engine?.close()
         engine = null
         super.onDestroy()
     }
 
-    private fun onStartTone() {
+    private fun copyAssetWav(): String {
+        val out = File(cacheDir, "sine_440_16bit_stereo.wav")
+        if (!out.exists() || out.length() == 0L) {
+            assets.open("sine_440_16bit_stereo.wav").use { input ->
+                out.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        return out.absolutePath
+    }
+
+    private fun onToggleMode() {
+        if (running) return
+        fileMode = !fileMode
+        status = if (fileMode) "mode=File (WAV ring)" else "mode=Sine"
+    }
+
+    private fun onStartPlayback() {
         val eng = engine ?: return
+        if (fileMode) {
+            val path = wavPath
+            if (path == null) {
+                status = "WAV asset missing"
+                return
+            }
+            val modeCode = eng.setPlayMode(HowlEngine.PlayMode.File)
+            if (modeCode != 0) {
+                status = "setPlayMode=${eng.statusName(modeCode)}"
+                return
+            }
+            val loadCode = eng.load(path)
+            if (loadCode != 0) {
+                status = "load=${eng.statusName(loadCode)}"
+                return
+            }
+        } else {
+            val modeCode = eng.setPlayMode(HowlEngine.PlayMode.Sine)
+            if (modeCode != 0) {
+                status = "setPlayMode=${eng.statusName(modeCode)}"
+                return
+            }
+        }
+
         val code = eng.start()
         running = code == 0
-        status = "start=${eng.statusName(code)} state=${eng.stateName()}"
+        status = "start=${eng.statusName(code)} state=${eng.stateName()} mode=${eng.playMode()}"
         diagText = eng.diagnostics().formatLines()
     }
 
-    private fun onStopTone() {
+    private fun onStopPlayback() {
         val eng = engine ?: return
         val code = eng.stop()
         running = false
@@ -110,7 +153,9 @@ private fun ToneScreen(
     status: String,
     diagnostics: String,
     running: Boolean,
+    fileMode: Boolean,
     canControl: Boolean,
+    onToggleMode: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -133,12 +178,23 @@ private fun ToneScreen(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "440 Hz + diagnostics",
+            text = if (fileMode) "WAV → ring → Oboe" else "440 Hz sine",
             color = muted,
             fontSize = 16.sp,
             modifier = Modifier.padding(top = 8.dp),
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = onToggleMode,
+            enabled = canControl && !running,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = muted.copy(alpha = 0.25f),
+                contentColor = muted,
+            ),
+        ) {
+            Text(if (fileMode) "Switch to Sine" else "Switch to WAV")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
         Row {
             Button(
                 onClick = onStart,

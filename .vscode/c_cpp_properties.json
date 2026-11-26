@@ -8,6 +8,15 @@
       "cStandard": "c17",
       "intelliSenseMode": "linux-clang-arm64",
       "compilerPath": "/opt/homebrew/share/android-commandlinetools/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++",
+      "includePath": [
+        "${workspaceFolder}/native/audio-engine/include",
+        "${workspaceFolder}/native/audio-android/include",
+        "${workspaceFolder}/audio-bridge/src/main/cpp"
+      ],
+      "defines": [
+        "ANDROID=1",
+        "__ANDROID__=1"
+      ],
       "browse": {
         "limitSymbolsToIncludedHeaders": true,
         "path": [
@@ -26,13 +35,15 @@
       "compilerPath": "/usr/bin/clang++",
       "includePath": [
         "${workspaceFolder}/native/audio-engine/include",
+        "${workspaceFolder}/native/audio-android/include",
         "${workspaceFolder}/native/tests"
       ],
       "defines": [],
       "browse": {
         "limitSymbolsToIncludedHeaders": true,
         "path": [
-          "${workspaceFolder}/native/audio-engine/include"
+          "${workspaceFolder}/native/audio-engine/include",
+          "${workspaceFolder}/native/audio-android/include"
         ]
       }
     }

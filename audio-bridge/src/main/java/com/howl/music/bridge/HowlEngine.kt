@@ -3,14 +3,19 @@ package com.howl.music.bridge
 import java.io.Closeable
 
 /**
- * Control-thread façade over the native Engine (Phase 1.3).
+ * Control-thread façade over the native Engine (Phase 2.2).
  *
- * Call [prepare]/[start]/[stop]/[diagnostics] from one control thread only —
- * never from an audio callback.
+ * Call prepare/start/stop/load/setPlayMode/diagnostics from one control thread
+ * only — never from an audio callback.
  */
 class HowlEngine private constructor(
     private var handle: Long,
 ) : Closeable {
+
+    enum class PlayMode(val nativeCode: Int) {
+        Sine(0),
+        File(1),
+    }
 
     val isClosed: Boolean
         get() = handle == 0L
@@ -27,10 +32,18 @@ class HowlEngine private constructor(
 
     fun statusName(code: Int): String = nativeStatusString(code)
 
-    /**
-     * Snapshot of stream config + callback counters.
-     * Safe to call while running; cheap atomic loads on the native side.
-     */
+    fun setPlayMode(mode: PlayMode): Int =
+        nativeSetPlayMode(requireHandle(), mode.nativeCode)
+
+    fun load(path: String): Int = nativeLoad(requireHandle(), path)
+
+    fun playMode(): PlayMode =
+        if (nativePlayMode(requireHandle()) == PlayMode.File.nativeCode) {
+            PlayMode.File
+        } else {
+            PlayMode.Sine
+        }
+
     fun diagnostics(): EngineDiagnostics {
         val buf = LongArray(FIELD_COUNT)
         val code = nativeGetDiagnostics(requireHandle(), buf)
@@ -48,9 +61,6 @@ class HowlEngine private constructor(
         )
     }
 
-    /**
-     * create → start → start(fail) → stop → destroy style check for UI/debug.
-     */
     fun lifecycleSmokeReport(): String {
         val lines = mutableListOf<String>()
         lines += version()
@@ -84,7 +94,6 @@ class HowlEngine private constructor(
     }
 
     companion object {
-        /** Must match JNI packing in howl_jni_engine.cpp. */
         private const val FIELD_COUNT = 7
 
         private val loadError: String? = try {
@@ -114,6 +123,9 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeStart(handle: Long): Int
         @JvmStatic private external fun nativeStop(handle: Long): Int
         @JvmStatic private external fun nativeState(handle: Long): Int
+        @JvmStatic private external fun nativeSetPlayMode(handle: Long, mode: Int): Int
+        @JvmStatic private external fun nativeLoad(handle: Long, path: String): Int
+        @JvmStatic private external fun nativePlayMode(handle: Long): Int
         @JvmStatic private external fun nativeGetDiagnostics(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeVersion(): String
         @JvmStatic private external fun nativeStatusString(status: Int): String

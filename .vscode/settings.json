@@ -27,12 +27,15 @@
     "GRADLE_USER_HOME": "/Volumes/2TB/gradle-home"
   },
 
-  // C/C++ IntelliSense: use the Android NDK compile DB (has Oboe + __ANDROID__).
-  // Do NOT let CMake Tools configure host-only native/ as the IntelliSense provider —
-  // that drops audio-android/Oboe and floods oboe_output.cpp with false errors.
+  // C/C++ IntelliSense: Android NDK compile DB (Oboe + __ANDROID__).
+  // Keep Android-NDK as the active config when editing audio-android sources.
   "C_Cpp.default.compileCommands": "${workspaceFolder}/audio-bridge/.cxx/tools/debug/arm64-v8a/compile_commands.json",
   "C_Cpp.default.cppStandard": "c++20",
   "C_Cpp.default.configurationProvider": "",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/native/audio-engine/include",
+    "${workspaceFolder}/native/audio-android/include"
+  ],
   "C_Cpp.autoAddFileAssociations": false,
   "cmake.configureOnOpen": false,
   "cmake.sourceDirectory": "${workspaceFolder}/native"

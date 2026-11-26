@@ -33,9 +33,9 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 
 | Field | Value |
 |-------|-------|
-| Current phase | **2.1 — Decoder abstraction + WAV/PCM** (implemented; awaiting approval) |
-| Completed phases | 0.1–0.4, 1.1–1.4 |
-| Implementation status | `IDecoder` + `WavDecoder` (Float32 out); host tests 21/21; not yet in audio callback path |
-| Technologies integrated | Prior + WAV PCM/float reader |
+| Current phase | **2.2 — PCM ring buffer** (implemented; awaiting approval) |
+| Completed phases | 0.1–0.4, 1.1–1.4, 2.1 |
+| Implementation status | SPSC ring + decode worker; sine or WAV→Oboe; host 26/26; emulator File mode xruns≈0 |
+| Technologies integrated | Prior + `PcmRingBuffer` / `DecodeWorker` |
 | Outstanding issues | Physical-device diagnostics baseline still open; arch decisions in [02](02-architecture-review.md) |
-| Next proposed phase | Phase 2.2 — PCM ring buffer (after 2.1 approval) |
+| Next proposed phase | Phase 2.3 — Transport controls (after 2.2 approval) |

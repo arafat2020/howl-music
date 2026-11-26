@@ -24,6 +24,7 @@ ctest --test-dir native/build-host --output-on-failure
 | `EngineLifecycle.*` | State machine happy path + invalid transitions + C API |
 | `SineOsc.*` | Deterministic sample math used by the 440 Hz test tone |
 | `WavDecoder.*` | WAV open/read/seek + unsupported/corrupt rejection (Phase 2.1) |
+| `PcmRingBuffer.*` / `DecodeWorker.*` | SPSC ring integrity + worker fill from WAV (Phase 2.2) |
 
 Fixtures live under `fixtures/` (see that folder’s README).
 

@@ -5,24 +5,27 @@
 
 #include <memory>
 #include <mutex>
+#include <string>
 
 #if defined(__ANDROID__)
 #include "howl/audio_output.h"
+#include "howl/decode_worker.h"
+#include "howl/pcm_ring_buffer.h"
 #endif
 
 namespace howl {
 
+enum class PlayMode : int32_t {
+    Sine = 0,
+    File = 1,
+};
+
 /**
- * Playback engine (Phase 1.3: Oboe sine + diagnostics snapshot).
+ * Playback engine (Phase 2.2: sine or WAV→ring→Oboe).
  *
- * Ownership
- * - Prefer Engine::create() → std::unique_ptr<Engine>.
- * - Non-copyable / non-movable.
- * - On Android, owns AudioOutput (Oboe stream) while Running.
- *
- * Threading policy (control thread)
- * - prepare/start/stop/state/diagnostics: control thread only — never from audio callback.
- * - Audio callback (inside AudioOutput) must not take Engine's mutex.
+ * Threading
+ * - prepare/start/stop/load/setPlayMode/diagnostics: control thread only.
+ * - DecodeWorker fills the ring; audio callback only pops (never decodes).
  */
 class Engine final {
 public:
@@ -39,9 +42,17 @@ public:
     Status start();
     Status stop();
 
-    EngineState state() const;
+    /**
+     * Select sine test tone or file-through-ring. Call while Idle/Prepared.
+     * File mode requires a successful load() before start().
+     */
+    Status setPlayMode(PlayMode mode);
 
-    /** Control-thread snapshot of stream/callback counters (zeros if idle). */
+    /** Open a WAV path for File mode (does not start playback). */
+    Status load(const char* path);
+
+    PlayMode playMode() const;
+    EngineState state() const;
     EngineDiagnostics diagnostics() const;
 
     static const char* version();
@@ -51,8 +62,15 @@ private:
 
     mutable std::mutex mutex_;
     EngineState state_{EngineState::Idle};
+    PlayMode playMode_{PlayMode::Sine};
+    std::string loadedPath_;
 
 #if defined(__ANDROID__)
+    static constexpr int32_t kRingCapacityFrames = 16384;
+    static constexpr int32_t kRingChannels = 2;
+
+    std::unique_ptr<PcmRingBuffer> ring_;
+    std::unique_ptr<DecodeWorker> worker_;
     std::unique_ptr<AudioOutput> output_;
 #endif
 };
@@ -72,8 +90,10 @@ int32_t howl_engine_prepare(HowlEngineHandle* engine);
 int32_t howl_engine_start(HowlEngineHandle* engine);
 int32_t howl_engine_stop(HowlEngineHandle* engine);
 int32_t howl_engine_state(HowlEngineHandle* engine);
+int32_t howl_engine_set_play_mode(HowlEngineHandle* engine, int32_t mode);
+int32_t howl_engine_load(HowlEngineHandle* engine, const char* path);
+int32_t howl_engine_play_mode(HowlEngineHandle* engine);
 
-/** Fills *out; returns 0 on success, NullHandle code if engine is null. */
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out);
 
 const char* howl_engine_version(void);

@@ -56,6 +56,41 @@ Java_com_howl_music_bridge_HowlEngine_nativeState(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeSetPlayMode(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle,
+    jint mode) {
+    return howl_engine_set_play_mode(reinterpret_cast<HowlEngineHandle*>(handle), mode);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeLoad(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jlong handle,
+    jstring path) {
+    if (path == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    const char* utf = env->GetStringUTFChars(path, nullptr);
+    if (utf == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    const int32_t code = howl_engine_load(reinterpret_cast<HowlEngineHandle*>(handle), utf);
+    env->ReleaseStringUTFChars(path, utf);
+    return code;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativePlayMode(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_play_mode(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
 Java_com_howl_music_bridge_HowlEngine_nativeGetDiagnostics(
     JNIEnv* env,
     jobject /* thiz */,

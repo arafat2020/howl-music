@@ -1,4 +1,9 @@
 #include "howl/engine.h"
+#include "howl/wav_decoder.h"
+
+#if defined(__ANDROID__)
+#include <vector>
+#endif
 
 #include <utility>
 
@@ -29,8 +34,52 @@ Status Engine::prepare() {
     return Status::InvalidState;
 }
 
+Status Engine::setPlayMode(PlayMode mode) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ == EngineState::Running || state_ == EngineState::Stopping) {
+        return Status::InvalidState;
+    }
+    playMode_ = mode;
+    return Status::Ok;
+}
+
+Status Engine::load(const char* path) {
+    if (path == nullptr || path[0] == '\0') {
+        return Status::NullHandle;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ == EngineState::Running || state_ == EngineState::Stopping) {
+        return Status::InvalidState;
+    }
+
+    // Validate the file can open as WAV (control thread only).
+    auto probe = createWavDecoder();
+    const Status opened = probe->open(path);
+    if (opened != Status::Ok) {
+        return opened;
+    }
+    const AudioFormat fmt = probe->format();
+    probe->close();
+
+    // Interim policy (Phase 2.2): stereo Float32 path only; rate checked at start
+    // against the device stream (reject mismatch — no resampler yet).
+    if (fmt.channelCount != 2) {
+        return Status::UnsupportedFormat;
+    }
+
+    loadedPath_ = path;
+    return Status::Ok;
+}
+
+PlayMode Engine::playMode() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return playMode_;
+}
+
 Status Engine::start() {
 #if defined(__ANDROID__)
+    PlayMode mode;
+    std::string path;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (state_ == EngineState::Running) {
@@ -39,31 +88,88 @@ Status Engine::start() {
         if (state_ == EngineState::Stopping) {
             return Status::InvalidState;
         }
-        // Mark Prepared while we open the device outside the tight state window.
         if (state_ == EngineState::Idle) {
             state_ = EngineState::Prepared;
         }
+        mode = playMode_;
+        path = loadedPath_;
+        if (mode == PlayMode::File && path.empty()) {
+            state_ = EngineState::Idle;
+            return Status::InvalidState;
+        }
     }
 
-    // Open Oboe WITHOUT holding Engine mutex (callback must never need that lock).
+    auto ring = std::make_unique<PcmRingBuffer>(kRingCapacityFrames, kRingChannels);
+    auto worker = std::make_unique<DecodeWorker>();
     auto output = std::make_unique<AudioOutput>();
-    const Status opened = output->start();
-    if (opened != Status::Ok) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        state_ = EngineState::Idle;
-        output_.reset();
-        return opened;
+
+    if (mode == PlayMode::File) {
+        auto decoder = createWavDecoder();
+        const Status opened = decoder->open(path.c_str());
+        if (opened != Status::Ok) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_ = EngineState::Idle;
+            return opened;
+        }
+
+        // Prefill ring before starting the device to reduce startup underruns.
+        {
+            std::vector<float> prefill(
+                static_cast<size_t>(1024) * static_cast<size_t>(kRingChannels));
+            for (int i = 0; i < 8; ++i) {
+                int32_t n = 0;
+                if (decoder->read(prefill.data(), 1024, &n) != Status::Ok || n <= 0) {
+                    break;
+                }
+                (void)ring->push(prefill.data(), n);
+            }
+        }
+
+        output->setOutputMode(OutputMode::Ring, ring.get());
+        const Status outSt = output->start();
+        if (outSt != Status::Ok) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_ = EngineState::Idle;
+            return outSt;
+        }
+
+        // Rate must match — no resampler in 2.2.
+        if (decoder->format().sampleRate != output->sampleRate()) {
+            (void)output->stop();
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_ = EngineState::Idle;
+            return Status::UnsupportedFormat;
+        }
+
+        const Status wSt = worker->start(std::move(decoder), ring.get());
+        if (wSt != Status::Ok) {
+            (void)output->stop();
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_ = EngineState::Idle;
+            return wSt;
+        }
+    } else {
+        output->setOutputMode(OutputMode::Sine, nullptr);
+        const Status outSt = output->start();
+        if (outSt != Status::Ok) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            state_ = EngineState::Idle;
+            return outSt;
+        }
     }
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (state_ == EngineState::Prepared || state_ == EngineState::Idle) {
+            ring_ = std::move(ring);
+            worker_ = std::move(worker);
             output_ = std::move(output);
             state_ = EngineState::Running;
             return Status::Ok;
         }
     }
-    // Raced into an unexpected state — close the stream we opened.
+
+    worker->stop();
     (void)output->stop();
     return Status::InvalidState;
 #else
@@ -87,21 +193,30 @@ Status Engine::start() {
 
 Status Engine::stop() {
 #if defined(__ANDROID__)
+    std::unique_ptr<DecodeWorker> toJoin;
     std::unique_ptr<AudioOutput> toStop;
+    std::unique_ptr<PcmRingBuffer> toDrop;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ == EngineState::Idle && !output_) {
+        if (state_ == EngineState::Idle && !output_ && !worker_) {
             return Status::Ok;
         }
         state_ = EngineState::Stopping;
+        toJoin = std::move(worker_);
         toStop = std::move(output_);
+        toDrop = std::move(ring_);
     }
 
-    // Close stream outside the mutex.
+    // Join worker first so it cannot push after ring is destroyed.
+    if (toJoin) {
+        toJoin->stop();
+        toJoin.reset();
+    }
     if (toStop) {
         (void)toStop->stop();
         toStop.reset();
     }
+    toDrop.reset();
 
     std::lock_guard<std::mutex> lock(mutex_);
     state_ = EngineState::Idle;
@@ -143,7 +258,7 @@ EngineDiagnostics Engine::diagnostics() const {
 }
 
 const char* Engine::version() {
-    return "howl_engine/0.3.0-diagnostics";
+    return "howl_engine/0.4.0-pcm-ring";
 }
 
 }  // namespace howl
@@ -189,6 +304,28 @@ int32_t howl_engine_state(HowlEngineHandle* engine) {
         return static_cast<int32_t>(howl::EngineState::Idle);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->state());
+}
+
+int32_t howl_engine_set_play_mode(HowlEngineHandle* engine, int32_t mode) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setPlayMode(
+        static_cast<howl::PlayMode>(mode)));
+}
+
+int32_t howl_engine_load(HowlEngineHandle* engine, const char* path) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->load(path));
+}
+
+int32_t howl_engine_play_mode(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::PlayMode::Sine);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->playMode());
 }
 
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out) {
