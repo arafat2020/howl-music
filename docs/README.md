@@ -33,9 +33,9 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 
 | Field | Value |
 |-------|-------|
-| Current phase | **1.4 — GoogleTest harness** (implemented; awaiting approval) |
-| Completed phases | 0.1–0.4, 1.1–1.3 |
-| Implementation status | Host GoogleTest 13/13 PASS (`howl_native_tests`); Oboe I/O remains device-only |
-| Technologies integrated | Prior + GoogleTest v1.15.2 (FetchContent) |
+| Current phase | **2.1 — Decoder abstraction + WAV/PCM** (implemented; awaiting approval) |
+| Completed phases | 0.1–0.4, 1.1–1.4 |
+| Implementation status | `IDecoder` + `WavDecoder` (Float32 out); host tests 21/21; not yet in audio callback path |
+| Technologies integrated | Prior + WAV PCM/float reader |
 | Outstanding issues | Physical-device diagnostics baseline still open; arch decisions in [02](02-architecture-review.md) |
-| Next proposed phase | Phase 2.1 — Decoder abstraction + WAV/PCM (after 1.4 approval) |
+| Next proposed phase | Phase 2.2 — PCM ring buffer (after 2.1 approval) |

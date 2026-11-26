@@ -3,7 +3,7 @@
 **Milestone:** 2 — Playback pipeline  
 **Priority:** Foundational  
 **Depends on:** 1.2  
-**Status:** Not started
+**Status:** Implemented — awaiting your approval
 
 ## Objective
 
@@ -61,8 +61,11 @@ Engine will later pull from decoder via ring buffer (Phase 2.2).
 ```text
 native/audio-engine/
   include/howl/decoder.h
+  include/howl/audio_format.h
+  include/howl/wav_decoder.h
   src/wav_decoder.cpp
 native/tests/fixtures/sine_440_16bit_stereo.wav
+native/tests/test_wav_decoder.cpp
 ```
 
 ## Testing strategy
@@ -72,10 +75,10 @@ native/tests/fixtures/sine_440_16bit_stereo.wav
 
 ## Acceptance criteria
 
-- [ ] WAV PCM decode works in tests.
-- [ ] Interface is usable for a second decoder later.
-- [ ] No audio-callback file I/O.
-- [ ] Unsupported formats fail explicitly.
+- [x] WAV PCM decode works in tests.
+- [x] Interface is usable for a second decoder later.
+- [x] No audio-callback file I/O.
+- [x] Unsupported formats fail explicitly.
 
 ## Review checklist
 
@@ -92,12 +95,12 @@ native/tests/fixtures/sine_440_16bit_stereo.wav
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | `IDecoder` + `AudioFormat`; `WavDecoder` (16-bit PCM + float32, mono/stereo) outputting interleaved Float32; `createWavDecoder()` factory; status codes `FileOpenFailed` / `UnsupportedFormat` / `IoError`. |
+| Files created/modified | `decoder.h`, `audio_format.h`, `wav_decoder.h/.cpp`, `status.h`, fixtures, `test_wav_decoder.cpp`, CMake/docs. |
+| Tests executed | `./scripts/run-host-native-tests.sh` → **21/21 PASS** (8 new WavDecoder cases). `:android-app:assembleDebug` SUCCESS. |
+| Results | Open/read/seek/EOF + reject corrupt/PCM8/missing file all green. |
+| Known limitations | Not wired into Engine/Oboe yet (Phase 2.2). No MP3/AAC/FLAC. Max 2 channels. |
+| Decisions made | Always convert to **Float32 interleaved** on `read()`. RAII `ifstream` in `WavDecoder`. Decoder stays off the audio callback by API contract. |
 | Next phase | 2.2 — PCM ring buffer |
 
 **Approval required before Phase 2.2.**

@@ -12,6 +12,9 @@ enum class Status : int32_t {
     NotRunning = 3,
     NullHandle = 4,
     DeviceOpenFailed = 5,
+    FileOpenFailed = 6,
+    UnsupportedFormat = 7,
+    IoError = 8,
 };
 
 enum class EngineState : int32_t {
@@ -35,6 +38,12 @@ inline const char* statusToString(Status s) {
             return "NullHandle";
         case Status::DeviceOpenFailed:
             return "DeviceOpenFailed";
+        case Status::FileOpenFailed:
+            return "FileOpenFailed";
+        case Status::UnsupportedFormat:
+            return "UnsupportedFormat";
+        case Status::IoError:
+            return "IoError";
     }
     return "Unknown";
 }

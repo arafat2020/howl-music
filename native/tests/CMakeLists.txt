@@ -1,4 +1,4 @@
-# Host-only GoogleTest suite (Phase 1.4). Never linked into the Android .so.
+# Host-only GoogleTest suite. Never linked into the Android .so.
 
 include(FetchContent)
 include(GoogleTest)
@@ -18,6 +18,7 @@ FetchContent_MakeAvailable(googletest)
 add_executable(howl_native_tests
     test_engine_lifecycle.cpp
     test_sine_osc.cpp
+    test_wav_decoder.cpp
 )
 
 target_link_libraries(howl_native_tests
@@ -27,6 +28,11 @@ target_link_libraries(howl_native_tests
 )
 
 target_compile_features(howl_native_tests PRIVATE cxx_std_20)
+
+target_compile_definitions(howl_native_tests
+    PRIVATE
+        HOWL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
 
 gtest_discover_tests(howl_native_tests
     DISCOVERY_MODE PRE_TEST

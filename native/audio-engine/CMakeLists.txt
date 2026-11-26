@@ -1,6 +1,7 @@
 add_library(howl_audio_engine STATIC
     src/engine.cpp
     src/engine_smoke.cpp
+    src/wav_decoder.cpp
 )
 
 target_include_directories(howl_audio_engine
