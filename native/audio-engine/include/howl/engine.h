@@ -5,24 +5,23 @@
 #include <memory>
 #include <mutex>
 
+#if defined(__ANDROID__)
+#include "howl/audio_output.h"
+#endif
+
 namespace howl {
 
 /**
- * Playback engine skeleton (Phase 1.1).
+ * Playback engine (Phase 1.2: Oboe sine output on Android).
  *
  * Ownership
- * - Prefer creating via Engine::create() and holding std::unique_ptr<Engine>.
- * - Non-copyable / non-movable to avoid accidental shared ownership of future
- *   realtime resources (Oboe stream, DSP graph).
+ * - Prefer Engine::create() → std::unique_ptr<Engine>.
+ * - Non-copyable / non-movable.
+ * - On Android, owns AudioOutput (Oboe stream) while Running.
  *
  * Threading policy (control thread)
- * - prepare/start/stop/state may be called only from a single control thread
- *   (e.g. the thread that owns the JNI/Kotlin HowlEngine, or a dedicated
- *   engine service thread). Do not call these from an audio callback.
- * - A mutex serializes state transitions for safety if that rule is broken,
- *   but it is not a substitute for correct call-site discipline.
- *
- * No audio device is opened in this phase.
+ * - prepare/start/stop/state: control thread only — never from audio callback.
+ * - Audio callback (inside AudioOutput) must not take Engine's mutex.
  */
 class Engine final {
 public:
@@ -35,13 +34,8 @@ public:
 
     ~Engine();
 
-    /** Idle → Prepared. Future: configure sample rate / buffer sizes. */
     Status prepare();
-
-    /** Prepared → Running. Rejects double-start. */
     Status start();
-
-    /** Running → Stopping → Idle. Double-stop from Idle is Ok (idempotent). */
     Status stop();
 
     EngineState state() const;
@@ -54,14 +48,12 @@ private:
     mutable std::mutex mutex_;
     EngineState state_{EngineState::Idle};
 
-    // Phase 1.2+: AudioOutput* / ProcessGraph* owned here (unique_ptr).
+#if defined(__ANDROID__)
+    std::unique_ptr<AudioOutput> output_;
+#endif
 };
 
 }  // namespace howl
-
-/* -------------------------------------------------------------------------- */
-/* Stable C API for JNI (opaque handle = howl::Engine*).                      */
-/* -------------------------------------------------------------------------- */
 
 #ifdef __cplusplus
 extern "C" {

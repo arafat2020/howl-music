@@ -5,14 +5,12 @@
 namespace howl {
 
 std::unique_ptr<Engine> Engine::create() {
-    // unique_ptr with private ctor via new — factory owns creation.
     return std::unique_ptr<Engine>(new Engine());
 }
 
 Engine::Engine() = default;
 
 Engine::~Engine() {
-    // Deterministic shutdown: never leave a "Running" engine behind.
     (void)stop();
 }
 
@@ -23,7 +21,7 @@ Status Engine::prepare() {
             state_ = EngineState::Prepared;
             return Status::Ok;
         case EngineState::Prepared:
-            return Status::Ok;  // idempotent
+            return Status::Ok;
         case EngineState::Running:
         case EngineState::Stopping:
             return Status::InvalidState;
@@ -32,10 +30,46 @@ Status Engine::prepare() {
 }
 
 Status Engine::start() {
+#if defined(__ANDROID__)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ == EngineState::Running) {
+            return Status::AlreadyRunning;
+        }
+        if (state_ == EngineState::Stopping) {
+            return Status::InvalidState;
+        }
+        // Mark Prepared while we open the device outside the tight state window.
+        if (state_ == EngineState::Idle) {
+            state_ = EngineState::Prepared;
+        }
+    }
+
+    // Open Oboe WITHOUT holding Engine mutex (callback must never need that lock).
+    auto output = std::make_unique<AudioOutput>();
+    const Status opened = output->start();
+    if (opened != Status::Ok) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_ = EngineState::Idle;
+        output_.reset();
+        return opened;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ == EngineState::Prepared || state_ == EngineState::Idle) {
+            output_ = std::move(output);
+            state_ = EngineState::Running;
+            return Status::Ok;
+        }
+    }
+    // Raced into an unexpected state — close the stream we opened.
+    (void)output->stop();
+    return Status::InvalidState;
+#else
     std::lock_guard<std::mutex> lock(mutex_);
     switch (state_) {
         case EngineState::Idle:
-            // Convenience: allow start without explicit prepare.
             state_ = EngineState::Prepared;
             state_ = EngineState::Running;
             return Status::Ok;
@@ -48,19 +82,40 @@ Status Engine::start() {
             return Status::InvalidState;
     }
     return Status::InvalidState;
+#endif
 }
 
 Status Engine::stop() {
+#if defined(__ANDROID__)
+    std::unique_ptr<AudioOutput> toStop;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ == EngineState::Idle && !output_) {
+            return Status::Ok;
+        }
+        state_ = EngineState::Stopping;
+        toStop = std::move(output_);
+    }
+
+    // Close stream outside the mutex.
+    if (toStop) {
+        (void)toStop->stop();
+        toStop.reset();
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    state_ = EngineState::Idle;
+    return Status::Ok;
+#else
     std::lock_guard<std::mutex> lock(mutex_);
     switch (state_) {
         case EngineState::Idle:
-            return Status::Ok;  // idempotent — no crash on double-stop
+            return Status::Ok;
         case EngineState::Prepared:
             state_ = EngineState::Idle;
             return Status::Ok;
         case EngineState::Running:
             state_ = EngineState::Stopping;
-            // No audio device yet — transition completes synchronously.
             state_ = EngineState::Idle;
             return Status::Ok;
         case EngineState::Stopping:
@@ -68,6 +123,7 @@ Status Engine::stop() {
             return Status::Ok;
     }
     return Status::InvalidState;
+#endif
 }
 
 EngineState Engine::state() const {
@@ -76,7 +132,7 @@ EngineState Engine::state() const {
 }
 
 const char* Engine::version() {
-    return "howl_engine/0.1.0-lifecycle";
+    return "howl_engine/0.2.0-oboe-sine";
 }
 
 }  // namespace howl

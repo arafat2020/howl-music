@@ -11,6 +11,7 @@ enum class Status : int32_t {
     AlreadyRunning = 2,
     NotRunning = 3,
     NullHandle = 4,
+    DeviceOpenFailed = 5,
 };
 
 enum class EngineState : int32_t {
@@ -32,6 +33,8 @@ inline const char* statusToString(Status s) {
             return "NotRunning";
         case Status::NullHandle:
             return "NullHandle";
+        case Status::DeviceOpenFailed:
+            return "DeviceOpenFailed";
     }
     return "Unknown";
 }

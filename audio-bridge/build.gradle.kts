@@ -19,6 +19,8 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++20"
+                // Oboe Prefab + our .so need the shared STL.
+                arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
     }
@@ -32,6 +34,10 @@ android {
         jvmTarget = "17"
     }
 
+    buildFeatures {
+        prefab = true
+    }
+
     externalNativeBuild {
         cmake {
             // Owns the single shared lib: libhowl_engine.so
@@ -43,4 +49,6 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    // Prefab package — stable Oboe binaries (see native/audio-android/README.md).
+    implementation(libs.oboe)
 }

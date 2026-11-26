@@ -5,6 +5,9 @@ project(howl_native LANGUAGES CXX)
 
 add_subdirectory(audio-engine)
 
-# Placeholders for later phases — do not link into howl_engine yet.
-# add_subdirectory(audio-android)  # Phase 1.2 Oboe
+if(ANDROID)
+    add_subdirectory(audio-android)
+endif()
+
+# Placeholder for later phases.
 # add_subdirectory(audio-juce)     # Phase 3.1 JUCE DSP

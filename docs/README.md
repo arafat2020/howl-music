@@ -33,9 +33,9 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 
 | Field | Value |
 |-------|-------|
-| Current phase | **1.1 — Engine lifecycle** (implemented, awaiting approval) |
-| Completed phases | 0.1–0.4 |
-| Implementation status | `howl::Engine` state machine + JNI/Kotlin `HowlEngine`; host lifecycle test green; no audio I/O yet |
-| Technologies integrated | Prior + Engine C++ API / control-thread policy |
+| Current phase | **1.2 — Oboe test signal** (audible on emulator; awaiting approval) |
+| Completed phases | 0.1–0.4, 1.1 |
+| Implementation status | Oboe Prefab output + 440 Hz sine; Start/Stop UI; audible tone confirmed on emulator |
+| Technologies integrated | Prior + Oboe 1.9.3 (Prefab), `audio-android` |
 | Outstanding issues | Open arch decisions in [02](02-architecture-review.md) (decoder, JUCE license, …) |
-| Next proposed phase | Phase 1.2 — Oboe output + test signal (after 1.1 approval) |
+| Next proposed phase | Phase 1.3 — Underrun & callback diagnostics (after 1.2 approval) |

@@ -3,7 +3,7 @@
 **Milestone:** 1 — Audio foundation  
 **Priority:** Foundational  
 **Depends on:** 1.1  
-**Status:** Not started
+**Status:** Implemented — awaiting device listen + your approval
 
 ## Objective
 
@@ -73,9 +73,9 @@ native/audio-android/
 
 ## Acceptance criteria
 
-- [ ] Stable audible test signal on target device.
-- [ ] Start/stop is lifecycle-safe (no crash, no zombie streams).
-- [ ] Callback performs no I/O/JNI/alloc.
+- [ ] Stable audible test signal on target device. *(build verified; confirm by ear)*
+- [x] Start/stop is lifecycle-safe (no crash, no zombie streams). *(engine closes stream outside mutex; destructor stops)*
+- [x] Callback performs no I/O/JNI/alloc.
 - [ ] No recurring underruns under idle phone conditions (informal; formalize in 1.3).
 
 ## Review checklist
@@ -95,12 +95,24 @@ native/audio-android/
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | `howl::AudioOutput` (Oboe Shared / Float / stereo / 440 Hz sine @ ~−6 dBFS). Engine start/stop opens/closes stream. UI Start/Stop buttons. |
+| Files created/modified | `native/audio-android/**`, Engine/status updates, `audio-bridge` Prefab+Oboe Gradle/CMake, `MainActivity.kt`, version catalog, docs. |
+| Tests executed | Host lifecycle test PASS. `./gradlew :android-app:installDebug` SUCCESS. Emulator: Oboe/AAudio open OK; AudioFlinger active track; audible 440 Hz confirmed. |
+| Results | **Audible acceptance met** on Pixel_API_36 emulator (Start → tone, Stop → silence). |
+| Known limitations | Emulator audio quality ≠ device; Mac host output device matters. Diagnostics/underrun counters are Phase 1.3. Exclusive mode not forced (Shared + LowLatency with None fallback). |
+| Decisions made | Oboe via **Maven Prefab** `com.google.oboe:oboe:1.9.3`. Format Float32. Amplitude 0.5 (hearable on quiet emulators). Stop tone in `onDestroy` only (not `onStop`). Version `howl_engine/0.2.0-oboe-sine`. |
 | Next phase | 1.3 — Underrun & callback diagnostics |
+
+### Listen checklist
+
+```bash
+./gradlew :android-app:installDebug
+adb shell am start -n com.howl.music/.MainActivity
+```
+
+1. Tap **Start** → hear steady 440 Hz tone (not blasting).  
+2. Tap **Stop** → silence.  
+3. Start again → works.  
+4. Leave running ~2 minutes → no crash.
 
 **Approval required before Phase 1.3.**

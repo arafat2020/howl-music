@@ -1,5 +1,5 @@
 # audio-android
 
-Placeholder for Oboe / AAudio output (Phase 1.2+).
+Oboe / AAudio output integration (Phase 1.2+).
 
-Not compiled or linked yet.
+**Oboe integration choice:** Maven Prefab package `com.google.oboe:oboe` (stable binaries via Gradle). Prefer this over compiling Oboe from source for reproducible app builds.

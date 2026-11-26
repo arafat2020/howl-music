@@ -19,3 +19,7 @@ target_link_libraries(howl_engine
         howl_audio_engine
         ${log-lib}
 )
+
+if(TARGET howl_audio_android)
+    target_link_libraries(howl_engine PRIVATE howl_audio_android)
+endif()

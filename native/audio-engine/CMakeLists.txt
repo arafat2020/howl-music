@@ -10,6 +10,14 @@ target_include_directories(howl_audio_engine
 
 target_compile_features(howl_audio_engine PUBLIC cxx_std_20)
 
+if(ANDROID)
+    # engine.h includes audio_output.h on Android; symbols come from howl_audio_android.
+    target_include_directories(howl_audio_engine
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../audio-android/include
+    )
+endif()
+
 # Host lifecycle test (Phase 1.1) — skipped when building inside Android NDK.
 if(NOT ANDROID)
     add_executable(howl_engine_lifecycle_test
