@@ -1,15 +1,14 @@
 #include "howl/audio_output.h"
+#include "howl/sine_osc.h"
 
 #include <oboe/Oboe.h>
 
 #include <atomic>
-#include <cmath>
 #include <cstdint>
 
 namespace howl {
 namespace {
 
-constexpr double kTwoPi = 6.28318530717958647692;
 constexpr double kSineHz = 440.0;
 // ~ -6 dBFS: easier to hear on quiet emulators; still below full-scale.
 constexpr float kAmplitude = 0.5f;
@@ -19,8 +18,7 @@ constexpr float kAmplitude = 0.5f;
 struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
                            public oboe::AudioStreamErrorCallback {
     std::shared_ptr<oboe::AudioStream> stream;
-    double phase = 0.0;
-    double phaseIncrement = 0.0;
+    SineOsc osc;
     int32_t channels = 2;
 
     std::atomic<int64_t> callbackCount{0};
@@ -47,11 +45,7 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
 
         auto* out = static_cast<float*>(audioData);
         for (int32_t frame = 0; frame < numFrames; ++frame) {
-            const float sample = kAmplitude * static_cast<float>(std::sin(phase));
-            phase += phaseIncrement;
-            if (phase >= kTwoPi) {
-                phase -= kTwoPi;
-            }
+            const float sample = osc.next(kAmplitude);
             for (int32_t ch = 0; ch < channels; ++ch) {
                 out[frame * channels + ch] = sample;
             }
@@ -109,8 +103,7 @@ Status AudioOutput::start() {
     channelCount_ = impl_->stream->getChannelCount();
     framesPerBurst_ = impl_->stream->getFramesPerBurst();
     impl_->channels = channelCount_;
-    impl_->phase = 0.0;
-    impl_->phaseIncrement = (kTwoPi * kSineHz) / static_cast<double>(sampleRate_);
+    impl_->osc.configure(kSineHz, sampleRate_);
 
     result = impl_->stream->requestStart();
     if (result != oboe::Result::OK) {
@@ -137,8 +130,7 @@ Status AudioOutput::stop() {
     sampleRate_ = 0;
     channelCount_ = 0;
     framesPerBurst_ = 0;
-    impl_->phase = 0.0;
-    impl_->phaseIncrement = 0.0;
+    impl_->osc = SineOsc{};
     return Status::Ok;
 }
 

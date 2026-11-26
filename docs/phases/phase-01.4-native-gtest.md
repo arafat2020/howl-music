@@ -3,7 +3,7 @@
 **Milestone:** 1 — Audio foundation  
 **Priority:** Foundational  
 **Depends on:** 1.1 (can parallelize with 1.2–1.3)  
-**Status:** Not started
+**Status:** Implemented — awaiting your approval
 
 ## Objective
 
@@ -57,6 +57,8 @@ Oboe device I/O tests remain manual/device-only for now.
 native/tests/
   CMakeLists.txt
   test_engine_lifecycle.cpp
+  test_sine_osc.cpp
+scripts/run-host-native-tests.sh
 ```
 
 ## Testing strategy
@@ -66,10 +68,10 @@ native/tests/
 
 ## Acceptance criteria
 
-- [ ] Host tests run without an Android device.
-- [ ] Lifecycle tests cover happy path + invalid transition.
-- [ ] Documented how to run tests.
-- [ ] Oboe I/O not falsely “unit tested” on host.
+- [x] Host tests run without an Android device.
+- [x] Lifecycle tests cover happy path + invalid transition.
+- [x] Documented how to run tests.
+- [x] Oboe I/O not falsely “unit tested” on host.
 
 ## Review checklist
 
@@ -86,12 +88,12 @@ native/tests/
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Host GoogleTest target `howl_native_tests` (13 cases): Engine lifecycle + `SineOsc` determinism. `scripts/run-host-native-tests.sh`. Tone path now uses shared `howl::SineOsc`. |
+| Files created/modified | `native/tests/**`, `native/CMakeLists.txt`, `audio-engine/CMakeLists.txt`, `sine_osc.h`, `oboe_output.cpp`, `scripts/run-host-native-tests.sh`, `docs/03-project-setup.md`, phase/docs README. |
+| Tests executed | `./scripts/run-host-native-tests.sh` → **13/13 PASS**. `:android-app:assembleDebug` SUCCESS. |
+| Results | Host suite green; no device required. |
+| Known limitations | First configure needs network for FetchContent. Oboe I/O still manual. No CI matrix yet. |
+| Decisions made | GoogleTest via **FetchContent**, pinned tag **`v1.15.2`** (not a submodule). `gtest_discover_tests` + top-level `enable_testing()`. Host diagnostics asserted **zero** (no fake Oboe). |
 | Next phase | 2.1 — Decoder abstraction + WAV/PCM |
 
 **Approval required before Phase 2.1 (or continue parallel 1.x if still open).**

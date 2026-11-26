@@ -91,13 +91,18 @@ Verified on this machine. Prefer these exact versions in Gradle/CMake until a la
 # Assemble debug app
 ./gradlew :android-app:assembleDebug
 
-# Native host tests (exact target name TBD in Phase 1.4)
-./gradlew :audio-engine:runHostTests
-# or: cmake --build build-host --target howl_engine_tests && ./howl_engine_tests
+# Native host GoogleTest (Phase 1.4) — no Android device required
+./scripts/run-host-native-tests.sh
+# Equivalent:
+#   cmake -S native -B native/build-host -DHOWL_BUILD_TESTS=ON
+#   cmake --build native/build-host --target howl_native_tests
+#   ctest --test-dir native/build-host --output-on-failure
 
 # Install on device
 ./gradlew :android-app:installDebug
 ```
+
+**Host vs device:** `howl_native_tests` covers Engine lifecycle + pure math (`SineOsc`). Oboe I/O / underruns stay manual on emulator or physical device (Phases 1.2–1.3).
 
 Exact module names follow [04 — Repository structure](04-repository-structure.md).
 

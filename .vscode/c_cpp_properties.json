@@ -1,0 +1,40 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Android-NDK",
+      "compileCommands": "${workspaceFolder}/audio-bridge/.cxx/tools/debug/arm64-v8a/compile_commands.json",
+      "cppStandard": "c++20",
+      "cStandard": "c17",
+      "intelliSenseMode": "linux-clang-arm64",
+      "compilerPath": "/opt/homebrew/share/android-commandlinetools/ndk/28.2.13676358/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++",
+      "browse": {
+        "limitSymbolsToIncludedHeaders": true,
+        "path": [
+          "${workspaceFolder}/native/audio-engine/include",
+          "${workspaceFolder}/native/audio-android/include",
+          "${workspaceFolder}/audio-bridge/src/main/cpp"
+        ]
+      }
+    },
+    {
+      "name": "Host-macOS",
+      "compileCommands": "${workspaceFolder}/native/build-host/compile_commands.json",
+      "cppStandard": "c++20",
+      "cStandard": "c17",
+      "intelliSenseMode": "macos-clang-arm64",
+      "compilerPath": "/usr/bin/clang++",
+      "includePath": [
+        "${workspaceFolder}/native/audio-engine/include",
+        "${workspaceFolder}/native/tests"
+      ],
+      "defines": [],
+      "browse": {
+        "limitSymbolsToIncludedHeaders": true,
+        "path": [
+          "${workspaceFolder}/native/audio-engine/include"
+        ]
+      }
+    }
+  ]
+}

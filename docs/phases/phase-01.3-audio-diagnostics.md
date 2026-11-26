@@ -3,7 +3,7 @@
 **Milestone:** 1 — Audio foundation  
 **Priority:** Foundational  
 **Depends on:** 1.2  
-**Status:** Implemented — awaiting your approval
+**Status:** Approved
 
 ## Objective
 

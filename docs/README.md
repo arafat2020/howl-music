@@ -33,9 +33,9 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 
 | Field | Value |
 |-------|-------|
-| Current phase | **1.3 — Underrun & callback diagnostics** (implemented; awaiting approval) |
-| Completed phases | 0.1–0.4, 1.1–1.2 |
-| Implementation status | Atomic callback/xrun counters + polled debug UI (~2 Hz); emulator baseline recorded |
-| Technologies integrated | Prior + `EngineDiagnostics` snapshot / atomics |
+| Current phase | **1.4 — GoogleTest harness** (implemented; awaiting approval) |
+| Completed phases | 0.1–0.4, 1.1–1.3 |
+| Implementation status | Host GoogleTest 13/13 PASS (`howl_native_tests`); Oboe I/O remains device-only |
+| Technologies integrated | Prior + GoogleTest v1.15.2 (FetchContent) |
 | Outstanding issues | Physical-device diagnostics baseline still open; arch decisions in [02](02-architecture-review.md) |
-| Next proposed phase | Phase 1.4 — GoogleTest harness (after 1.3 approval) |
+| Next proposed phase | Phase 2.1 — Decoder abstraction + WAV/PCM (after 1.4 approval) |
