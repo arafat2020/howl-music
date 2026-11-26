@@ -7,8 +7,6 @@ plugins {
 android {
     namespace = "com.howl.music"
     compileSdk = 35
-    // Locked in Phase 0.1 — keep explicit so CI/machines don't drift.
-    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.howl.music"
@@ -18,18 +16,6 @@ android {
         versionName = "0.1.0-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        // arm64-v8a: physical devices + Apple Silicon emulators
-        // x86_64: older Intel emulators
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
-
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-std=c++20"
-            }
-        }
     }
 
     buildTypes {
@@ -55,13 +41,6 @@ android {
         compose = true
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -70,6 +49,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":android-media"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
 

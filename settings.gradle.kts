@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "howl-music"
 
 include(":android-app")
+include(":android-media")
+include(":audio-bridge")

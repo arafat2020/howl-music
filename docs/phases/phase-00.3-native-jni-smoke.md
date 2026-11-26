@@ -3,7 +3,7 @@
 **Milestone:** 0 — Project foundation  
 **Priority:** Foundational  
 **Depends on:** 0.2  
-**Status:** Implemented — awaiting device UI confirmation + your approval
+**Status:** Approved / complete
 
 ## Objective
 

@@ -20,23 +20,30 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.howl.music.bridge.NativeSmoke
+import com.howl.music.media.MediaModulePlaceholder
 
 /**
- * Phase 0.3 host: Compose placeholder + JNI smoke status.
+ * Phase 0.4 host: Compose UI depends on android-media → audio-bridge → native.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            HowlPlaceholder(nativeStatus = NativeSmoke.statusText())
+            HowlPlaceholder(
+                nativeStatus = NativeSmoke.statusText(),
+                mediaStatus = MediaModulePlaceholder.STATUS,
+            )
         }
     }
 }
 
 @Composable
-private fun HowlPlaceholder(nativeStatus: String) {
-    // Brief base canvas #101014 — temporary until Phase 6.1 design system.
+private fun HowlPlaceholder(
+    nativeStatus: String,
+    mediaStatus: String,
+) {
     val background = Color(0xFF101014)
     val accent = Color(0xFFB7F34A)
     val muted = Color(0xFFE9E5DC)
@@ -62,6 +69,13 @@ private fun HowlPlaceholder(nativeStatus: String) {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 24.dp),
         )
+        Text(
+            text = mediaStatus,
+            color = muted.copy(alpha = 0.7f),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 12.dp),
+        )
     }
 }
 
@@ -69,5 +83,8 @@ private fun HowlPlaceholder(nativeStatus: String) {
 @Composable
 private fun HowlPlaceholderPreview() {
     val status = remember { "howl_engine/0.0.1-smoke\n1+1=2" }
-    HowlPlaceholder(nativeStatus = status)
+    HowlPlaceholder(
+        nativeStatus = status,
+        mediaStatus = MediaModulePlaceholder.STATUS,
+    )
 }

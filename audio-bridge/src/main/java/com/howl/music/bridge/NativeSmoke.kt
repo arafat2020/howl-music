@@ -1,10 +1,8 @@
-package com.howl.music
+package com.howl.music.bridge
 
 /**
- * Thin Kotlin façade over [libhowl_engine.so] for Phase 0.3.
- * Load once; surface failures instead of crashing the Activity.
- *
- * Phase 0.4 will move this into `audio-bridge`.
+ * Kotlin façade over [libhowl_engine.so].
+ * This module is the only place that should [System.loadLibrary] the engine.
  */
 object NativeSmoke {
     private val loadError: String?
@@ -22,7 +20,6 @@ object NativeSmoke {
 
     private external fun nativeAdd(a: Int, b: Int): Int
 
-    /** Human-readable status for the placeholder UI. */
     fun statusText(): String {
         loadError?.let { return "Native load failed:\n$it" }
         return try {

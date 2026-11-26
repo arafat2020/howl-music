@@ -3,7 +3,7 @@
 **Milestone:** 0 — Project foundation  
 **Priority:** Foundational  
 **Depends on:** 0.3  
-**Status:** Not started
+**Status:** Implemented — awaiting your review / approval
 
 ## Objective
 
@@ -74,10 +74,10 @@ native/
 
 ## Acceptance criteria
 
-- [ ] Module graph matches agreed structure (or documented delta).
-- [ ] Single native library load path.
-- [ ] App launches; smoke test passes.
-- [ ] No feature dependencies introduced early.
+- [x] Module graph matches agreed structure (or documented delta).
+- [x] Single native library load path.
+- [ ] App launches; smoke test passes. *(build+APK verified; confirm on emulator when available)*
+- [x] No feature dependencies introduced early.
 
 ## Review checklist
 
@@ -95,12 +95,22 @@ native/
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Multi-module layout: `android-app` → `android-media` (stub) → `audio-bridge` → `libhowl_engine.so`. Pure C++ stub in `native/audio-engine` linked by bridge CMake. Placeholders for `audio-android` / `audio-juce` / `tests`. |
+| Files created/modified | `settings.gradle.kts`, `audio-bridge/**`, `android-media/**`, `native/**`, `android-app/build.gradle.kts` + `MainActivity.kt` (removed app-local cpp/NativeSmoke), version catalog (+ android-library plugin), this phase doc, `docs/README.md`. |
+| Tests executed | `./gradlew :android-app:assembleDebug` — SUCCESS. APK contains exactly one `libhowl_engine.so` per ABI (`arm64-v8a`, `x86_64`). No emulator connected this session for install. |
+| Results | Module graph and single `.so` load path verified at build/package level. |
+| Known limitations | Device UI confirm still manual when emulator is up. `android-media` is a stub (no Media3). Engine is still smoke-only. |
+| Decisions made | Bridge is sole `externalNativeBuild` / `loadLibrary` owner. Media uses `api(project(":audio-bridge"))` so app can call `NativeSmoke`. Native tree is CMake-only (not a Gradle module). Kotlin packages: `com.howl.music.bridge`, `com.howl.music.media`. |
 | Next phase | 1.1 — C++ engine skeleton & lifecycle |
+
+### Device confirm (optional)
+
+```bash
+adb devices
+./gradlew :android-app:installDebug
+adb shell am start -n com.howl.music/.MainActivity
+```
+
+Expect: `howl_engine/0.0.1-smoke`, `1+1=2`, and media stub line.
 
 **Approval required before Phase 1.1.**

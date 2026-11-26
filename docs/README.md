@@ -33,9 +33,9 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 
 | Field | Value |
 |-------|-------|
-| Current phase | **0.3 — Native CMake + JNI smoke** (built; confirm on emulator UI) |
-| Completed phases | 0.1 Development environment; 0.2 Android Compose skeleton |
-| Implementation status | `libhowl_engine.so` packaged; Kotlin↔C++ smoke wired in UI |
-| Technologies integrated | Prior + NDK 28.2 / CMake 3.22.1 / JNI (`howl_engine`) |
-| Outstanding issues | Emulator/adb flaky during agent install; confirm `1+1=2` on device; open arch decisions in [02](02-architecture-review.md) |
-| Next proposed phase | Phase 0.4 — Module layout (after 0.3 approval) |
+| Current phase | **0.4 — Module layout & build wiring** (implemented, awaiting approval) |
+| Completed phases | 0.1–0.3 |
+| Implementation status | `android-app` → `android-media` → `audio-bridge` → `libhowl_engine.so`; `native/audio-engine` stub linked |
+| Technologies integrated | Multi-module Gradle + shared NDK lib; still no Oboe/Media3/Room |
+| Outstanding issues | Emulator confirm optional; open arch decisions in [02](02-architecture-review.md) |
+| Next proposed phase | Phase 1.1 — C++ engine skeleton & lifecycle (after 0.4 approval) |
