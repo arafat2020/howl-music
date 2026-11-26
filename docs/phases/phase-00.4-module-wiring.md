@@ -3,7 +3,7 @@
 **Milestone:** 0 — Project foundation  
 **Priority:** Foundational  
 **Depends on:** 0.3  
-**Status:** Implemented — awaiting your review / approval
+**Status:** Approved / complete
 
 ## Objective
 

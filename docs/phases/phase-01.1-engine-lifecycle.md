@@ -3,7 +3,7 @@
 **Milestone:** 1 — Audio foundation  
 **Priority:** Foundational  
 **Depends on:** 0.4  
-**Status:** Not started
+**Status:** Implemented — awaiting your review / approval
 
 ## Objective
 
@@ -66,10 +66,10 @@ native/audio-engine/
 
 ## Acceptance criteria
 
-- [ ] Engine lifecycle API compiles into `libhowl_engine.so`.
-- [ ] Invalid transitions return errors (no crash).
-- [ ] Ownership documented; no raw owning pointers without rationale.
-- [ ] No Oboe dependency required to pass this phase.
+- [x] Engine lifecycle API compiles into `libhowl_engine.so`.
+- [x] Invalid transitions return errors (no crash).
+- [x] Ownership documented; no raw owning pointers without rationale.
+- [x] No Oboe dependency required to pass this phase.
 
 ## Review checklist
 
@@ -87,12 +87,14 @@ native/audio-engine/
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Non-copyable `howl::Engine` with Idle→Prepared→Running→Stopping→Idle; Status codes; C API for JNI; Kotlin `HowlEngine` (`Closeable`); host lifecycle test; UI runs create/start/start(fail)/stop smoke. |
+| Files created/modified | `native/audio-engine/include/howl/{engine.h,status.h}`, `src/engine.cpp`, `src/engine_smoke.cpp`, `native/tests/test_engine_lifecycle.cpp`, `audio-bridge/.../howl_jni_engine.cpp`, `HowlEngine.kt`, `MainActivity.kt`, CMake lists, this phase doc, `docs/README.md`. |
+| Tests executed | Host: `howl_engine_lifecycle_test` → PASS. Android: `./gradlew :android-app:assembleDebug` → SUCCESS (`libhowl_engine.so` packaged). |
+| Results | Double-start returns `AlreadyRunning`; double-stop idempotent; destructor always stops; null C handles return `NullHandle`. |
+| Known limitations | No audio device/callback yet. Stopping is synchronous (no async drain). Mutex is safety net — policy is still single control thread. |
+| Decisions made | Factory `Engine::create()` → `unique_ptr`. Start from Idle auto-prepares. Version string `howl_engine/0.1.0-lifecycle`. Opaque C handle for JNI. |
 | Next phase | 1.2 — Oboe output + test signal |
+
+**Threading policy (locked):** `prepare` / `start` / `stop` / `state` are **control-thread only**. Never call from a future audio callback.
 
 **Approval required before Phase 1.2.**

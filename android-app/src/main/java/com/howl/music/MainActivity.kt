@@ -20,11 +20,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.howl.music.bridge.NativeSmoke
+import com.howl.music.bridge.HowlEngine
 import com.howl.music.media.MediaModulePlaceholder
 
 /**
- * Phase 0.4 host: Compose UI depends on android-media → audio-bridge → native.
+ * Phase 1.1 host: shows Engine lifecycle smoke (no audio device yet).
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,10 +32,21 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             HowlPlaceholder(
-                nativeStatus = NativeSmoke.statusText(),
+                nativeStatus = remember { runLifecycleSmoke() },
                 mediaStatus = MediaModulePlaceholder.STATUS,
             )
         }
+    }
+}
+
+private fun runLifecycleSmoke(): String {
+    HowlEngine.libraryError()?.let { return "Native load failed:\n$it" }
+    return try {
+        HowlEngine.create().use { engine ->
+            engine.lifecycleSmokeReport()
+        }
+    } catch (t: Throwable) {
+        "Lifecycle smoke failed:\n${t.message ?: t.javaClass.simpleName}"
     }
 }
 
@@ -65,7 +76,7 @@ private fun HowlPlaceholder(
         Text(
             text = nativeStatus,
             color = muted,
-            fontSize = 16.sp,
+            fontSize = 14.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 24.dp),
         )
@@ -82,7 +93,9 @@ private fun HowlPlaceholder(
 @Preview(showBackground = true)
 @Composable
 private fun HowlPlaceholderPreview() {
-    val status = remember { "howl_engine/0.0.1-smoke\n1+1=2" }
+    val status = remember {
+        "howl_engine/0.1.0-lifecycle\nstart#1=Ok\nstart#2=AlreadyRunning"
+    }
     HowlPlaceholder(
         nativeStatus = status,
         mediaStatus = MediaModulePlaceholder.STATUS,

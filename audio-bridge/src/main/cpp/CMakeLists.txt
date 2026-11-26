@@ -6,7 +6,10 @@ project(howl_bridge_native LANGUAGES CXX)
 set(HOWL_NATIVE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../native")
 add_subdirectory("${HOWL_NATIVE_ROOT}" "${CMAKE_BINARY_DIR}/howl-native")
 
-add_library(howl_engine SHARED howl_jni_smoke.cpp)
+add_library(howl_engine SHARED
+    howl_jni_smoke.cpp
+    howl_jni_engine.cpp
+)
 
 target_compile_features(howl_engine PRIVATE cxx_std_20)
 

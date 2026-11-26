@@ -33,9 +33,9 @@ Start here: [Phase 0.1 — Development environment](phases/phase-00.1-dev-enviro
 
 | Field | Value |
 |-------|-------|
-| Current phase | **0.4 — Module layout & build wiring** (implemented, awaiting approval) |
-| Completed phases | 0.1–0.3 |
-| Implementation status | `android-app` → `android-media` → `audio-bridge` → `libhowl_engine.so`; `native/audio-engine` stub linked |
-| Technologies integrated | Multi-module Gradle + shared NDK lib; still no Oboe/Media3/Room |
-| Outstanding issues | Emulator confirm optional; open arch decisions in [02](02-architecture-review.md) |
-| Next proposed phase | Phase 1.1 — C++ engine skeleton & lifecycle (after 0.4 approval) |
+| Current phase | **1.1 — Engine lifecycle** (implemented, awaiting approval) |
+| Completed phases | 0.1–0.4 |
+| Implementation status | `howl::Engine` state machine + JNI/Kotlin `HowlEngine`; host lifecycle test green; no audio I/O yet |
+| Technologies integrated | Prior + Engine C++ API / control-thread policy |
+| Outstanding issues | Open arch decisions in [02](02-architecture-review.md) (decoder, JUCE license, …) |
+| Next proposed phase | Phase 1.2 — Oboe output + test signal (after 1.1 approval) |
