@@ -25,11 +25,13 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
     SineOsc osc;
     int32_t channels = 2;
     OutputMode mode = OutputMode::Sine;
-    PcmRingBuffer* ring = nullptr;  // non-owning
+    PcmRingBuffer* ring = nullptr;
+    std::atomic<int64_t>* positionFrames = nullptr;
+    std::atomic<bool> paused{false};
 
     std::atomic<int64_t> callbackCount{0};
     std::atomic<int32_t> lastFramesPerCallback{0};
-    std::atomic<int64_t> underrunCount{0};  // ring underrun events (or Oboe xruns in sine)
+    std::atomic<int64_t> underrunCount{0};
     std::atomic<int64_t> errorCount{0};
     std::atomic<bool> useRingUnderruns{false};
 
@@ -43,8 +45,19 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
 
         auto* out = static_cast<float*>(audioData);
 
+        if (paused.load(std::memory_order_acquire)) {
+            std::memset(
+                out,
+                0,
+                static_cast<size_t>(numFrames) * static_cast<size_t>(channels) * sizeof(float));
+            return oboe::DataCallbackResult::Continue;
+        }
+
         if (mode == OutputMode::Ring && ring != nullptr) {
             const int32_t got = ring->pop(out, numFrames);
+            if (got > 0 && positionFrames != nullptr) {
+                positionFrames->fetch_add(got, std::memory_order_relaxed);
+            }
             if (got < numFrames) {
                 const int32_t samples = (numFrames - got) * channels;
                 std::memset(
@@ -56,7 +69,6 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
             return oboe::DataCallbackResult::Continue;
         }
 
-        // Sine mode — also track Oboe xruns for diagnostics.
         if (audioStream != nullptr) {
             auto xruns = audioStream->getXRunCount();
             if (xruns) {
@@ -91,6 +103,18 @@ void AudioOutput::setOutputMode(OutputMode mode, PcmRingBuffer* ring) {
     impl_->useRingUnderruns.store(mode == OutputMode::Ring, std::memory_order_relaxed);
 }
 
+void AudioOutput::setPositionFrames(std::atomic<int64_t>* positionFrames) {
+    impl_->positionFrames = positionFrames;
+}
+
+void AudioOutput::setPaused(bool paused) {
+    impl_->paused.store(paused, std::memory_order_release);
+}
+
+bool AudioOutput::isPaused() const {
+    return impl_->paused.load(std::memory_order_acquire);
+}
+
 Status AudioOutput::start() {
     if (impl_->stream && impl_->stream->getState() == oboe::StreamState::Started) {
         return Status::AlreadyRunning;
@@ -106,6 +130,7 @@ Status AudioOutput::start() {
     impl_->lastFramesPerCallback.store(0, std::memory_order_relaxed);
     impl_->underrunCount.store(0, std::memory_order_relaxed);
     impl_->errorCount.store(0, std::memory_order_relaxed);
+    impl_->paused.store(false, std::memory_order_relaxed);
 
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output)
@@ -188,7 +213,6 @@ void AudioOutput::copyDiagnostics(EngineDiagnostics& out) const {
     out.underrun_count = impl_->underrunCount.load(std::memory_order_relaxed);
     out.error_count = impl_->errorCount.load(std::memory_order_relaxed);
 
-    // Sine mode: prefer live Oboe xrun count. Ring mode: keep our underrun events.
     if (!impl_->useRingUnderruns.load(std::memory_order_relaxed) && impl_->stream) {
         auto xruns = impl_->stream->getXRunCount();
         if (xruns) {

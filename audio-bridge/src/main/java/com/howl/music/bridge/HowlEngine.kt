@@ -3,10 +3,9 @@ package com.howl.music.bridge
 import java.io.Closeable
 
 /**
- * Control-thread façade over the native Engine (Phase 2.2).
+ * Control-thread façade over the native Engine (Phase 2.3).
  *
- * Call prepare/start/stop/load/setPlayMode/diagnostics from one control thread
- * only — never from an audio callback.
+ * Call transport APIs from one control thread only — never from an audio callback.
  */
 class HowlEngine private constructor(
     private var handle: Long,
@@ -26,6 +25,12 @@ class HowlEngine private constructor(
 
     fun stop(): Int = nativeStop(requireHandle())
 
+    fun pause(): Int = nativePause(requireHandle())
+
+    fun resume(): Int = nativeResume(requireHandle())
+
+    fun seekMs(positionMs: Long): Int = nativeSeekMs(requireHandle(), positionMs)
+
     fun state(): Int = nativeState(requireHandle())
 
     fun stateName(): String = nativeStateString(state())
@@ -44,8 +49,23 @@ class HowlEngine private constructor(
             PlayMode.Sine
         }
 
+    fun transport(): TransportSnapshot {
+        val buf = LongArray(TRANSPORT_FIELDS)
+        val code = nativeGetTransport(requireHandle(), buf)
+        if (code != 0) {
+            return TransportSnapshot.Empty
+        }
+        return TransportSnapshot(
+            positionFrames = buf[0],
+            durationFrames = buf[1],
+            sampleRate = buf[2].toInt(),
+            paused = buf[3] != 0L,
+            playing = buf[4] != 0L,
+        )
+    }
+
     fun diagnostics(): EngineDiagnostics {
-        val buf = LongArray(FIELD_COUNT)
+        val buf = LongArray(DIAG_FIELDS)
         val code = nativeGetDiagnostics(requireHandle(), buf)
         if (code != 0) {
             return EngineDiagnostics.Empty
@@ -94,7 +114,8 @@ class HowlEngine private constructor(
     }
 
     companion object {
-        private const val FIELD_COUNT = 7
+        private const val DIAG_FIELDS = 7
+        private const val TRANSPORT_FIELDS = 5
 
         private val loadError: String? = try {
             System.loadLibrary("howl_engine")
@@ -122,10 +143,14 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativePrepare(handle: Long): Int
         @JvmStatic private external fun nativeStart(handle: Long): Int
         @JvmStatic private external fun nativeStop(handle: Long): Int
+        @JvmStatic private external fun nativePause(handle: Long): Int
+        @JvmStatic private external fun nativeResume(handle: Long): Int
+        @JvmStatic private external fun nativeSeekMs(handle: Long, positionMs: Long): Int
         @JvmStatic private external fun nativeState(handle: Long): Int
         @JvmStatic private external fun nativeSetPlayMode(handle: Long, mode: Int): Int
         @JvmStatic private external fun nativeLoad(handle: Long, path: String): Int
         @JvmStatic private external fun nativePlayMode(handle: Long): Int
+        @JvmStatic private external fun nativeGetTransport(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeGetDiagnostics(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeVersion(): String
         @JvmStatic private external fun nativeStatusString(status: Int): String

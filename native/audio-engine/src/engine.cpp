@@ -2,9 +2,11 @@
 #include "howl/wav_decoder.h"
 
 #if defined(__ANDROID__)
+#include <thread>
 #include <vector>
 #endif
 
+#include <algorithm>
 #include <utility>
 
 namespace howl {
@@ -52,18 +54,19 @@ Status Engine::load(const char* path) {
         return Status::InvalidState;
     }
 
-    // Validate the file can open as WAV (control thread only).
     auto probe = createWavDecoder();
     const Status opened = probe->open(path);
     if (opened != Status::Ok) {
         return opened;
     }
     const AudioFormat fmt = probe->format();
+    durationFrames_ = probe->frameCount();
+    fileSampleRate_ = fmt.sampleRate;
     probe->close();
 
-    // Interim policy (Phase 2.2): stereo Float32 path only; rate checked at start
-    // against the device stream (reject mismatch — no resampler yet).
     if (fmt.channelCount != 2) {
+        durationFrames_ = 0;
+        fileSampleRate_ = 0;
         return Status::UnsupportedFormat;
     }
 
@@ -102,6 +105,8 @@ Status Engine::start() {
     auto ring = std::make_unique<PcmRingBuffer>(kRingCapacityFrames, kRingChannels);
     auto worker = std::make_unique<DecodeWorker>();
     auto output = std::make_unique<AudioOutput>();
+    positionFrames_.store(0, std::memory_order_relaxed);
+    paused_.store(false, std::memory_order_relaxed);
 
     if (mode == PlayMode::File) {
         auto decoder = createWavDecoder();
@@ -111,21 +116,11 @@ Status Engine::start() {
             state_ = EngineState::Idle;
             return opened;
         }
-
-        // Prefill ring before starting the device to reduce startup underruns.
-        {
-            std::vector<float> prefill(
-                static_cast<size_t>(1024) * static_cast<size_t>(kRingChannels));
-            for (int i = 0; i < 8; ++i) {
-                int32_t n = 0;
-                if (decoder->read(prefill.data(), 1024, &n) != Status::Ok || n <= 0) {
-                    break;
-                }
-                (void)ring->push(prefill.data(), n);
-            }
-        }
+        durationFrames_ = decoder->frameCount();
+        fileSampleRate_ = decoder->format().sampleRate;
 
         output->setOutputMode(OutputMode::Ring, ring.get());
+        output->setPositionFrames(&positionFrames_);
         const Status outSt = output->start();
         if (outSt != Status::Ok) {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -133,7 +128,6 @@ Status Engine::start() {
             return outSt;
         }
 
-        // Rate must match — no resampler in 2.2.
         if (decoder->format().sampleRate != output->sampleRate()) {
             (void)output->stop();
             std::lock_guard<std::mutex> lock(mutex_);
@@ -148,14 +142,19 @@ Status Engine::start() {
             state_ = EngineState::Idle;
             return wSt;
         }
+        (void)worker->prefill(8);
+        worker->setPushEnabled(true);
     } else {
         output->setOutputMode(OutputMode::Sine, nullptr);
+        output->setPositionFrames(nullptr);
         const Status outSt = output->start();
         if (outSt != Status::Ok) {
             std::lock_guard<std::mutex> lock(mutex_);
             state_ = EngineState::Idle;
             return outSt;
         }
+        durationFrames_ = 0;
+        fileSampleRate_ = output->sampleRate();
     }
 
     {
@@ -178,9 +177,11 @@ Status Engine::start() {
         case EngineState::Idle:
             state_ = EngineState::Prepared;
             state_ = EngineState::Running;
+            paused_.store(false, std::memory_order_relaxed);
             return Status::Ok;
         case EngineState::Prepared:
             state_ = EngineState::Running;
+            paused_.store(false, std::memory_order_relaxed);
             return Status::Ok;
         case EngineState::Running:
             return Status::AlreadyRunning;
@@ -205,9 +206,9 @@ Status Engine::stop() {
         toJoin = std::move(worker_);
         toStop = std::move(output_);
         toDrop = std::move(ring_);
+        paused_.store(false, std::memory_order_relaxed);
     }
 
-    // Join worker first so it cannot push after ring is destroyed.
     if (toJoin) {
         toJoin->stop();
         toJoin.reset();
@@ -220,6 +221,7 @@ Status Engine::stop() {
 
     std::lock_guard<std::mutex> lock(mutex_);
     state_ = EngineState::Idle;
+    positionFrames_.store(0, std::memory_order_relaxed);
     return Status::Ok;
 #else
     std::lock_guard<std::mutex> lock(mutex_);
@@ -232,6 +234,7 @@ Status Engine::stop() {
         case EngineState::Running:
             state_ = EngineState::Stopping;
             state_ = EngineState::Idle;
+            paused_.store(false, std::memory_order_relaxed);
             return Status::Ok;
         case EngineState::Stopping:
             state_ = EngineState::Idle;
@@ -239,6 +242,142 @@ Status Engine::stop() {
     }
     return Status::InvalidState;
 #endif
+}
+
+Status Engine::pause() {
+#if defined(__ANDROID__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != EngineState::Running || !output_) {
+        return Status::NotRunning;
+    }
+    paused_.store(true, std::memory_order_release);
+    output_->setPaused(true);
+    if (worker_) {
+        worker_->setPushEnabled(false);
+    }
+    return Status::Ok;
+#else
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != EngineState::Running) {
+        return Status::NotRunning;
+    }
+    paused_.store(true, std::memory_order_release);
+    return Status::Ok;
+#endif
+}
+
+Status Engine::resume() {
+#if defined(__ANDROID__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != EngineState::Running || !output_) {
+        return Status::NotRunning;
+    }
+    if (worker_) {
+        worker_->setPushEnabled(true);
+    }
+    output_->setPaused(false);
+    paused_.store(false, std::memory_order_release);
+    return Status::Ok;
+#else
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ != EngineState::Running) {
+        return Status::NotRunning;
+    }
+    paused_.store(false, std::memory_order_release);
+    return Status::Ok;
+#endif
+}
+
+Status Engine::seekFrames(int64_t frameIndex) {
+#if defined(__ANDROID__)
+    // Pause pop + push, flush ring, seek decoder, prefill, restore pause state.
+    bool wasPaused = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != EngineState::Running || playMode_ != PlayMode::File || !worker_ ||
+            !ring_ || !output_) {
+            return Status::InvalidState;
+        }
+        wasPaused = paused_.load(std::memory_order_acquire);
+        const int64_t dur = durationFrames_;
+        if (frameIndex < 0 || (dur > 0 && frameIndex > dur)) {
+            return Status::InvalidState;
+        }
+
+        output_->setPaused(true);
+        worker_->setPushEnabled(false);
+    }
+
+    // Let in-flight callback observe pause before we clear the ring.
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ != EngineState::Running || !worker_ || !ring_ || !output_) {
+            return Status::InvalidState;
+        }
+        ring_->clear();
+        const Status st = worker_->seekToFrame(frameIndex);
+        if (st != Status::Ok) {
+            if (!wasPaused) {
+                worker_->setPushEnabled(true);
+                output_->setPaused(false);
+                paused_.store(false, std::memory_order_release);
+            }
+            return st;
+        }
+        positionFrames_.store(frameIndex, std::memory_order_relaxed);
+        (void)worker_->prefill(8);
+        if (!wasPaused) {
+            worker_->setPushEnabled(true);
+            output_->setPaused(false);
+            paused_.store(false, std::memory_order_release);
+        } else {
+            paused_.store(true, std::memory_order_release);
+        }
+    }
+    return Status::Ok;
+#else
+    (void)frameIndex;
+    return Status::InvalidState;
+#endif
+}
+
+Status Engine::seekMs(int64_t positionMs) {
+    int32_t rate = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        rate = fileSampleRate_;
+#if defined(__ANDROID__)
+        if (rate <= 0 && output_) {
+            rate = output_->sampleRate();
+        }
+#endif
+    }
+    return seekFrames(msToFrames(positionMs, rate));
+}
+
+bool Engine::isPaused() const {
+    return paused_.load(std::memory_order_acquire);
+}
+
+TransportSnapshot Engine::transport() const {
+    TransportSnapshot snap{};
+    std::lock_guard<std::mutex> lock(mutex_);
+    snap.playing = (state_ == EngineState::Running);
+    snap.paused = paused_.load(std::memory_order_acquire);
+    snap.positionFrames = positionFrames_.load(std::memory_order_relaxed);
+    snap.durationFrames = durationFrames_;
+    snap.sampleRate = fileSampleRate_;
+#if defined(__ANDROID__)
+    if (snap.sampleRate <= 0 && output_) {
+        snap.sampleRate = output_->sampleRate();
+    }
+#endif
+    if (snap.durationFrames > 0) {
+        snap.positionFrames = std::min(snap.positionFrames, snap.durationFrames);
+    }
+    return snap;
 }
 
 EngineState Engine::state() const {
@@ -258,7 +397,7 @@ EngineDiagnostics Engine::diagnostics() const {
 }
 
 const char* Engine::version() {
-    return "howl_engine/0.4.0-pcm-ring";
+    return "howl_engine/0.5.0-transport";
 }
 
 }  // namespace howl
@@ -326,6 +465,48 @@ int32_t howl_engine_play_mode(HowlEngineHandle* engine) {
         return static_cast<int32_t>(howl::PlayMode::Sine);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->playMode());
+}
+
+int32_t howl_engine_pause(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->pause());
+}
+
+int32_t howl_engine_resume(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->resume());
+}
+
+int32_t howl_engine_seek_frames(HowlEngineHandle* engine, int64_t frame) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->seekFrames(frame));
+}
+
+int32_t howl_engine_seek_ms(HowlEngineHandle* engine, int64_t ms) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->seekMs(ms));
+}
+
+int32_t howl_engine_get_transport(HowlEngineHandle* engine, HowlTransportSnapshot* out) {
+    if (engine == nullptr || out == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    const howl::TransportSnapshot snap =
+        reinterpret_cast<howl::Engine*>(engine)->transport();
+    out->position_frames = snap.positionFrames;
+    out->duration_frames = snap.durationFrames;
+    out->sample_rate = snap.sampleRate;
+    out->paused = snap.paused ? 1 : 0;
+    out->playing = snap.playing ? 1 : 0;
+    return static_cast<int32_t>(howl::Status::Ok);
 }
 
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out) {

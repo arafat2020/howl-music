@@ -91,6 +91,59 @@ Java_com_howl_music_bridge_HowlEngine_nativePlayMode(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativePause(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_pause(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeResume(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_resume(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeSeekMs(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle,
+    jlong positionMs) {
+    return howl_engine_seek_ms(reinterpret_cast<HowlEngineHandle*>(handle), positionMs);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeGetTransport(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jlong handle,
+    jlongArray out) {
+    if (out == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    if (env->GetArrayLength(out) < 5) {
+        return static_cast<jint>(howl::Status::InvalidState);
+    }
+    HowlTransportSnapshot snap{};
+    const int32_t code =
+        howl_engine_get_transport(reinterpret_cast<HowlEngineHandle*>(handle), &snap);
+    if (code != 0) {
+        return code;
+    }
+    jlong buf[5];
+    buf[0] = snap.position_frames;
+    buf[1] = snap.duration_frames;
+    buf[2] = snap.sample_rate;
+    buf[3] = snap.paused;
+    buf[4] = snap.playing;
+    env->SetLongArrayRegion(out, 0, 5, buf);
+    return code;
+}
+
+JNIEXPORT jint JNICALL
 Java_com_howl_music_bridge_HowlEngine_nativeGetDiagnostics(
     JNIEnv* env,
     jobject /* thiz */,

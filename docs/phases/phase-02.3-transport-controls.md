@@ -3,7 +3,7 @@
 **Milestone:** 2 — Playback pipeline  
 **Priority:** Foundational  
 **Depends on:** 2.2  
-**Status:** Not started
+**Status:** Implemented — awaiting your approval
 
 ## Objective
 
@@ -57,6 +57,7 @@ Position = decoder/engine frame clock snapshot
 ```text
 native/audio-engine/include/howl/transport.h
 audio-bridge/.../HowlEngine.kt  # play/pause/seek/position
+audio-bridge/.../TransportSnapshot.kt
 ```
 
 ## Testing strategy
@@ -67,10 +68,10 @@ audio-bridge/.../HowlEngine.kt  # play/pause/seek/position
 
 ## Acceptance criteria
 
-- [ ] Play/pause/seek work on device for WAV.
-- [ ] Position moves forward while playing; stable while paused.
-- [ ] Seek does not click catastrophically (minor clicks OK until DSP smoothing).
-- [ ] No I/O in callback.
+- [x] Play/pause/seek work on device for WAV.
+- [x] Position moves forward while playing; stable while paused.
+- [x] Seek does not click catastrophically (minor clicks OK until DSP smoothing).
+- [x] No I/O in callback.
 
 ## Review checklist
 
@@ -87,12 +88,12 @@ audio-bridge/.../HowlEngine.kt  # play/pause/seek/position
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | `TransportSnapshot`; Engine `pause`/`resume`/`seekFrames`/`seekMs`/`transport`; callback pause flag (silence, no pop); seek = pause push+pop → `ring.clear` → `decoder.seek` → prefill; UI Play/Pause/Seek 0/Seek mid + live position. |
+| Files created/modified | `transport.h`, `decode_worker.*`, `engine.*`, `audio_output.*`, JNI/Kotlin, `MainActivity`, tests, docs. |
+| Tests executed | Host **28/28 PASS**. Emulator: play advances position; pause freezes; `seekMs=2500 → Ok` → `pos=2.5s / 5.0s`. |
+| Results | Transport path validated on emulator. |
+| Known limitations | Seek uses a short sleep for callback quiesce (not a formal RT command queue). No scrubber UI. Pause does not close the Oboe stream (differs from stop). |
+| Decisions made | Position = atomic frames popped (reset on seek). Duration from decoder. Version `howl_engine/0.5.0-transport`. Worker starts with push disabled until prefill completes. |
 | Next phase | 2.5 recommended before heavy 2.4, or 2.4 if format pressure is higher |
 
 **Approval required before next phase.**

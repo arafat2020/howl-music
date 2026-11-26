@@ -13,10 +13,10 @@
 namespace howl {
 
 /**
- * Worker thread: IDecoder::read → PcmRingBuffer::push (Phase 2.2).
+ * Worker thread: IDecoder::read → PcmRingBuffer::push (Phase 2.2/2.3).
  *
- * Never runs on the audio callback. stop() signals and joins before the
- * ring or decoder may be destroyed.
+ * Control thread may pause pushes and seek the decoder while the audio
+ * callback is also paused (no concurrent pop) — see Engine::seek.
  */
 class DecodeWorker {
 public:
@@ -39,10 +39,29 @@ public:
         return running_.load(std::memory_order_acquire);
     }
 
-    /** True after decoder hit EOF (ring may still have audio). */
     bool reachedEof() const {
         return eof_.load(std::memory_order_acquire);
     }
+
+    /** When false, worker does not read/push (seek/pause coordination). */
+    void setPushEnabled(bool enabled);
+
+    bool pushEnabled() const {
+        return pushEnabled_.load(std::memory_order_acquire);
+    }
+
+    /**
+     * Seek decoder. Call only while push is disabled and the audio callback
+     * is not popping (output paused). Clears EOF so decoding can continue.
+     */
+    Status seekToFrame(int64_t frameIndex);
+
+    int64_t decoderPositionFrames() const;
+    int64_t decoderDurationFrames() const;
+    int32_t decoderSampleRate() const;
+
+    /** Prefill ring from current decoder position (control thread, push disabled). */
+    Status prefill(int32_t maxChunks);
 
 private:
     void threadMain();
@@ -52,7 +71,8 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> eof_{false};
-    std::vector<float> scratch_;  // preallocated on start
+    std::atomic<bool> pushEnabled_{true};
+    std::vector<float> scratch_;
 };
 
 }  // namespace howl

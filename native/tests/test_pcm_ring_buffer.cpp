@@ -1,5 +1,6 @@
 #include "howl/decode_worker.h"
 #include "howl/pcm_ring_buffer.h"
+#include "howl/transport.h"
 #include "howl/wav_decoder.h"
 
 #include <gtest/gtest.h>
@@ -79,6 +80,7 @@ TEST(DecodeWorker, FillsRingFromWav) {
     howl::PcmRingBuffer ring(4096, 2);
     howl::DecodeWorker worker;
     ASSERT_EQ(worker.start(std::move(decoder), &ring), howl::Status::Ok);
+    worker.setPushEnabled(true);
 
     // Wait until some audio is available.
     for (int i = 0; i < 200 && ring.availableRead() < 512; ++i) {
@@ -97,4 +99,34 @@ TEST(DecodeWorker, FillsRingFromWav) {
 
     worker.stop();
     EXPECT_FALSE(worker.isRunning());
+}
+
+TEST(DecodeWorker, SeekFlushesAndRestarts) {
+    auto decoder = howl::createWavDecoder();
+    ASSERT_EQ(decoder->open(fixture("sine_440_16bit_stereo.wav").c_str()), howl::Status::Ok);
+    const int64_t duration = decoder->frameCount();
+    ASSERT_GT(duration, 1000);
+
+    howl::PcmRingBuffer ring(4096, 2);
+    howl::DecodeWorker worker;
+    ASSERT_EQ(worker.start(std::move(decoder), &ring), howl::Status::Ok);
+    (void)worker.prefill(4);
+    EXPECT_GT(ring.availableRead(), 0);
+
+    worker.setPushEnabled(false);
+    ring.clear();
+    EXPECT_EQ(ring.availableRead(), 0);
+    ASSERT_EQ(worker.seekToFrame(duration / 2), howl::Status::Ok);
+    EXPECT_EQ(worker.decoderPositionFrames(), duration / 2);
+    (void)worker.prefill(4);
+    EXPECT_GT(ring.availableRead(), 0);
+
+    worker.setPushEnabled(true);
+    worker.stop();
+}
+
+TEST(Transport, FramesMsRoundTrip) {
+    EXPECT_EQ(howl::msToFrames(1000, 48000), 48000);
+    EXPECT_EQ(howl::framesToMs(48000, 48000), 1000);
+    EXPECT_EQ(howl::msToFrames(500, 48000), 24000);
 }

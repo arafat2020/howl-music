@@ -3,12 +3,13 @@
 #include "howl/diagnostics.h"
 #include "howl/status.h"
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
 namespace howl {
 
-class PcmRingBuffer;  // defined in audio-engine; pointer-only here
+class PcmRingBuffer;
 
 enum class OutputMode : int32_t {
     Sine = 0,
@@ -16,13 +17,10 @@ enum class OutputMode : int32_t {
 };
 
 /**
- * Oboe output (Phase 1.2+) with sine or PCM-ring source (Phase 2.2).
+ * Oboe output with sine or PCM-ring source (Phase 2.2/2.3).
  *
- * Realtime rules for the audio callback:
- * - No heap allocation
- * - No logging / file I/O / network / JNI
- * - No unbounded locks
- * - Ring pop only (underrun → silence + atomic count)
+ * Pause: callback outputs silence and does not pop the ring (no I/O).
+ * Position: optional atomic incremented by frames successfully popped.
  */
 class AudioOutput {
 public:
@@ -32,16 +30,16 @@ public:
     AudioOutput(const AudioOutput&) = delete;
     AudioOutput& operator=(const AudioOutput&) = delete;
 
-    /**
-     * Configure before start(). Ring pointer is non-owning; must outlive the
-     * stream until stop() returns. For Sine mode, ring may be null.
-     */
     void setOutputMode(OutputMode mode, PcmRingBuffer* ring);
 
-    /** Open device stream and begin callback rendering. */
-    Status start();
+    /** Non-owning; callback increments by frames popped (ring mode). */
+    void setPositionFrames(std::atomic<int64_t>* positionFrames);
 
-    /** Stop callback and close stream. Safe to call if not running. */
+    /** When true, callback writes silence and does not consume the ring. */
+    void setPaused(bool paused);
+    bool isPaused() const;
+
+    Status start();
     Status stop();
 
     bool isRunning() const;
