@@ -1,5 +1,6 @@
 package com.howl.music
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 onPrev = ::onPrev,
                 onNext = ::onNext,
                 onCycleRepeat = ::onCycleRepeat,
+                onMedia3Demo = ::openMedia3Demo,
             )
         }
     }
@@ -127,6 +129,11 @@ class MainActivity : ComponentActivity() {
         engine?.close()
         engine = null
         super.onDestroy()
+    }
+
+    private fun openMedia3Demo() {
+        onStopPlayback()
+        startActivity(Intent(this, Media3DebugActivity::class.java))
     }
 
     private fun copyAsset(name: String): String {
@@ -323,6 +330,7 @@ private fun PlayerScreen(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onCycleRepeat: () -> Unit,
+    onMedia3Demo: () -> Unit,
 ) {
     val background = Color(0xFF101014)
     val accent = Color(0xFFB7F34A)
@@ -470,6 +478,9 @@ private fun PlayerScreen(
             EqDebugControl(eqBandGainsDb, canControl, muted, onEqBandGainChanged)
             Button(onClick = onResetEq, enabled = canControl) { Text("Reset to flat") }
             Text("Boost can clip.", color = muted, fontSize = 12.sp)
+        }
+        if (BuildConfig.DEBUG) {
+            Button(onClick = onMedia3Demo) { Text("Media3 controls") }
         }
         Text(
             text = queue,

@@ -8,8 +8,10 @@ junit = "4.13.2"
 androidxJunit = "1.2.1"
 espressoCore = "3.6.1"
 oboe = "1.9.3"
+media3 = "1.6.1"
 
 [libraries]
+androidx-media3-common = { group = "androidx.media3", name = "media3-common", version.ref = "media3" }
 oboe = { group = "com.google.oboe", name = "oboe", version.ref = "oboe" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }

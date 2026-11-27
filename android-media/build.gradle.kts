@@ -25,5 +25,6 @@ android {
 dependencies {
     // api: app can use bridge façades (e.g. NativeSmoke) through media.
     api(project(":audio-bridge"))
+    api(libs.androidx.media3.common)
     implementation(libs.androidx.core.ktx)
 }

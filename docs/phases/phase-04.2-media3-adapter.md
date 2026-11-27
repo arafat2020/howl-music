@@ -3,7 +3,7 @@
 **Milestone:** 4 — Android integration  
 **Priority:** Foundational  
 **Depends on:** 4.1  
-**Status:** Not started
+**Status:** Implemented and verified on the Android emulator
 
 ## Objective
 
@@ -67,10 +67,24 @@ android-media/src/main/java/.../HowlMedia3Player.kt
 
 ## Acceptance criteria
 
-- [ ] Media3 Player controls native engine successfully.
-- [ ] Engine remains sole renderer.
-- [ ] State mapping documented.
-- [ ] No ExoPlayer audio renderers active for playback.
+- [x] Media3 Player controls native engine successfully.
+- [x] Engine remains sole renderer.
+- [x] State mapping documented.
+- [x] No ExoPlayer dependency or audio renderers in the playback path.
+
+## State mapping
+
+| Media3 state | Howl behavior |
+|---|---|
+| `IDLE` | Item has yet to be prepared, playback was explicitly stopped, or a command failed. A command failure also sets `playerError`. |
+| `READY` | A local file has been loaded. Play starts the native stream. Pause leaves it open and freezes the native position. |
+| `ENDED` | The native stream stopped at EOF. The adapter reports the item duration as the final position and can replay from the start. |
+
+The adapter reads one native transport snapshot every 200 ms while playback advances. It refreshes immediately after transport commands. Media3 receives this cached position without a separate tracking clock. The bridge does not expose an instantaneous buffered duration or underrun-to-buffering transition, so the adapter does not advertise a buffering state.
+
+The available commands cover setting a single local `file:` WAV or FLAC item, preparing, play and pause, seek, stop, and release. Playlist editing, remote sources, repeat and shuffle, speed, and volume are outside this adapter. A seek requested before native playback starts is applied just after opening the stream. Calls run synchronously on the player application looper.
+
+The adapter extends Media3's `SimpleBasePlayer` and declares only the commands it handles. [AndroidX SimpleBasePlayer reference](https://developer.android.com/reference/androidx/media3/common/SimpleBasePlayer)
 
 ## Review checklist
 
@@ -87,12 +101,12 @@ android-media/src/main/java/.../HowlMedia3Player.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | A single-item Media3 Player backed by HowlEngine and a debug Activity with play, pause, seek, stop, and position controls. |
+| Files created/modified | Media3 adapter, dependency catalog, debug Activity and launcher, Android instrumentation, and phase documentation. |
+| Tests executed | Android debug APK build and unit test, native and Media3 Android instrumentation, runtime dependency inspection, and debug Activity smoke test. |
+| Results | Emulator verified play and pause, advancing and frozen position, seek, end and replay, listener transitions, stop, and rejection of unsupported sources. The runtime graph contains media3-common as its only Media3 artifact. |
+| Known limitations | Single local item and synchronous commands. Playback was tested on the arm64 emulator. |
+| Decisions made | Pin media3-common 1.6.1. Use native snapshots as the position source and cancel polling when playback is paused, stopped, ended, or released. |
 | Next phase | 4.3 — MediaSessionService & notification |
 
 **Approval required before Phase 4.3.**
