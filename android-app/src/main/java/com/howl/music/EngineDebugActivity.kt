@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.howl.music.bridge.EngineDiagnostics
 import com.howl.music.bridge.HowlEngine
 import com.howl.music.bridge.TransportSnapshot
+import com.howl.music.ui.theme.HowlTheme
 import kotlinx.coroutines.delay
 import java.io.File
 import kotlin.math.roundToInt
@@ -79,46 +81,48 @@ class EngineDebugActivity : ComponentActivity() {
         }
 
         setContent {
-            LaunchedEffect(running) {
-                while (true) {
-                    val eng = engine
-                    if (eng != null && !eng.isClosed) {
-                        diagText = eng.diagnostics().formatLines()
-                        val t = eng.transport()
-                        transportText = t.formatLine()
-                        paused = t.paused
-                        running = t.playing
-                        queueText = formatQueue(eng)
+            HowlTheme {
+                LaunchedEffect(running) {
+                    while (true) {
+                        val eng = engine
+                        if (eng != null && !eng.isClosed) {
+                            diagText = eng.diagnostics().formatLines()
+                            val t = eng.transport()
+                            transportText = t.formatLine()
+                            paused = t.paused
+                            running = t.playing
+                            queueText = formatQueue(eng)
+                        }
+                        if (!running) break
+                        delay(250)
                     }
-                    if (!running) break
-                    delay(250)
                 }
-            }
 
-            PlayerScreen(
-                status = status,
-                transport = transportText,
-                queue = queueText,
-                diagnostics = diagText,
-                running = running,
-                paused = paused,
-                fileMode = fileMode,
-                canControl = engine != null,
-                preampGainDb = preampGainDb,
-                onPreampGainChanged = ::onPreampGainChanged,
-                eqBandGainsDb = eqBandGainsDb,
-                onEqBandGainChanged = ::onEqBandGainChanged,
-                onResetEq = ::onResetEq,
-                onToggleMode = ::onToggleMode,
-                onStart = ::onStartPlayback,
-                onStop = ::onStopPlayback,
-                onPauseResume = ::onPauseResume,
-                onSeekStart = { seekTo(0) },
-                onSeekMid = ::seekToMid,
-                onPrev = ::onPrev,
-                onNext = ::onNext,
-                onCycleRepeat = ::onCycleRepeat,
-            )
+                PlayerScreen(
+                    status = status,
+                    transport = transportText,
+                    queue = queueText,
+                    diagnostics = diagText,
+                    running = running,
+                    paused = paused,
+                    fileMode = fileMode,
+                    canControl = engine != null,
+                    preampGainDb = preampGainDb,
+                    onPreampGainChanged = ::onPreampGainChanged,
+                    eqBandGainsDb = eqBandGainsDb,
+                    onEqBandGainChanged = ::onEqBandGainChanged,
+                    onResetEq = ::onResetEq,
+                    onToggleMode = ::onToggleMode,
+                    onStart = ::onStartPlayback,
+                    onStop = ::onStopPlayback,
+                    onPauseResume = ::onPauseResume,
+                    onSeekStart = { seekTo(0) },
+                    onSeekMid = ::seekToMid,
+                    onPrev = ::onPrev,
+                    onNext = ::onNext,
+                    onCycleRepeat = ::onCycleRepeat,
+                )
+            }
         }
     }
 
@@ -328,9 +332,9 @@ private fun PlayerScreen(
     onNext: () -> Unit,
     onCycleRepeat: () -> Unit,
 ) {
-    val background = Color(0xFF101014)
-    val accent = Color(0xFFB7F34A)
-    val muted = Color(0xFFE9E5DC)
+    val background = MaterialTheme.colorScheme.background
+    val accent = MaterialTheme.colorScheme.primary
+    val muted = MaterialTheme.colorScheme.onBackground
 
     Column(
         modifier = Modifier

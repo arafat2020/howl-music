@@ -24,6 +24,7 @@ import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.scan.LibraryScanRepository
 import com.howl.music.data.scan.MediaScanner
 import com.howl.music.data.scan.ScanProgress
+import com.howl.music.ui.theme.HowlTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,19 +52,21 @@ class ScanActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-            ) {
-                Text("Music scan")
-                Text(message.value)
-                if (scanning.value) {
-                    LinearProgressIndicator()
-                    Button(onClick = { scanJob?.cancel() }) { Text("Cancel") }
-                } else {
-                    Button(onClick = ::requestScan, enabled = !askingPermission.value) {
-                        Text("Scan")
+            HowlTheme {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                ) {
+                    Text("Music scan")
+                    Text(message.value)
+                    if (scanning.value) {
+                        LinearProgressIndicator()
+                        Button(onClick = { scanJob?.cancel() }) { Text("Cancel") }
+                    } else {
+                        Button(onClick = ::requestScan, enabled = !askingPermission.value) {
+                            Text("Scan")
+                        }
                     }
                 }
             }

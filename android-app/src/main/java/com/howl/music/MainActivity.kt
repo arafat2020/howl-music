@@ -4,28 +4,29 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.howl.music.media.HowlPlaybackService
+import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.debug.ArtworkPreviewActivity
+import com.howl.music.ui.debug.ComponentGalleryActivity
+import com.howl.music.ui.theme.HowlSpacing
 import com.howl.music.ui.debug.ScanActivity
+import com.howl.music.ui.theme.HowlTheme
 import kotlinx.coroutines.delay
 
 @UnstableApi
@@ -48,46 +49,50 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            LaunchedEffect(player.value, playing.value) {
-                while (playing.value) {
-                    player.value?.let(::updatePlayer)
-                    delay(250)
+            HowlTheme {
+                LaunchedEffect(player.value, playing.value) {
+                    while (playing.value) {
+                        player.value?.let(::updatePlayer)
+                        delay(250)
+                    }
                 }
-            }
-            Column(
-                modifier = Modifier.fillMaxSize().background(Color(0xFF101014)).padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text("Howl", color = Color(0xFFB7F34A), fontSize = 48.sp, fontWeight = FontWeight.Bold)
-                Text(status.value, color = Color.White, modifier = Modifier.padding(top = 8.dp))
-                Text("${position.value} ms", color = Color.White)
-                Button(
-                    onClick = ::togglePlayback,
-                    enabled = player.value != null && !pendingPlay.value && !pendingDiagnostics.value,
+                Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(HowlSpacing.Screen),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(if (playing.value) "Pause" else "Play")
-                }
-                Button(
-                    onClick = { player.value?.stop() },
-                    enabled = player.value != null && !pendingDiagnostics.value,
-                ) { Text("Stop") }
-                Button(
-                    onClick = { player.value?.seekTo(0) },
-                    enabled = player.value?.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) == true &&
-                        !pendingDiagnostics.value,
-                ) { Text("Seek to start") }
-                if (BuildConfig.DEBUG) {
-                    Button(onClick = { startActivity(Intent(this@MainActivity, ScanActivity::class.java)) }) {
-                        Text("Scan music")
-                    }
-                    Button(onClick = { startActivity(Intent(this@MainActivity, ArtworkPreviewActivity::class.java)) }) {
-                        Text("Artwork preview")
-                    }
-                    Button(
-                        onClick = ::openDiagnostics,
+                    Text("Howl", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
+                    Text(status.value, modifier = Modifier.padding(top = HowlSpacing.Small))
+                    Text("${position.value} ms", style = MaterialTheme.typography.bodySmall)
+                    HowlButton(
+                        label = if (playing.value) "Pause" else "Play",
+                        onClick = ::togglePlayback,
                         enabled = player.value != null && !pendingPlay.value && !pendingDiagnostics.value,
-                    ) { Text("Engine diagnostics") }
+                    )
+                    HowlButton(
+                        label = "Stop",
+                        onClick = { player.value?.stop() },
+                        enabled = player.value != null && !pendingDiagnostics.value,
+                        primary = false,
+                    )
+                    HowlButton(
+                        label = "Seek to start",
+                        onClick = { player.value?.seekTo(0) },
+                        enabled = player.value?.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) == true &&
+                            !pendingDiagnostics.value,
+                        primary = false,
+                    )
+                    if (BuildConfig.DEBUG) {
+                        HowlButton("Scan music", { startActivity(Intent(this@MainActivity, ScanActivity::class.java)) }, primary = false)
+                        HowlButton("Artwork preview", { startActivity(Intent(this@MainActivity, ArtworkPreviewActivity::class.java)) }, primary = false)
+                        HowlButton("Component gallery", { startActivity(Intent(this@MainActivity, ComponentGalleryActivity::class.java)) }, primary = false)
+                        HowlButton(
+                            label = "Engine diagnostics",
+                            onClick = ::openDiagnostics,
+                            enabled = player.value != null && !pendingPlay.value && !pendingDiagnostics.value,
+                            primary = false,
+                        )
+                    }
                 }
             }
         }
