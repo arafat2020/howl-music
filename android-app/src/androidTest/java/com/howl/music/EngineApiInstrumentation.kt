@@ -19,6 +19,8 @@ import androidx.media3.session.SessionToken
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
 import com.howl.music.data.db.verifyRoomSchema
+import com.howl.music.data.readUserData
+import com.howl.music.data.writeUserData
 import com.howl.music.data.scan.verifyLibraryScan
 import com.howl.music.media.HowlMedia3Player
 import com.howl.music.media.HowlPlaybackService
@@ -29,29 +31,43 @@ import java.util.concurrent.TimeUnit
 
 /** Exercises the production bridge and native library on an Android control thread. */
 class EngineApiInstrumentation : Instrumentation() {
+    private var persistenceStep: String? = null
+
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        persistenceStep = arguments?.getString("persistenceStep")
         start()
     }
 
     override fun onStart() {
         val result = Bundle()
         val status = try {
-            verifyRoomSchema(targetContext)
-            verifyLibraryScan(targetContext)
             val fixture = File.createTempFile("howl-🎵-", ".wav", targetContext.cacheDir)
             try {
                 targetContext.assets.open("sine_880_16bit_stereo.wav").use { input ->
                     fixture.outputStream().use { input.copyTo(it) }
                 }
-                verifyLifecycle(fixture)
-                verifyCloseAndRestart(fixture)
-                verifyMedia3(fixture)
-                verifyServicePlayback()
+                when (persistenceStep) {
+                    "write" -> writeUserData(targetContext, context)
+                    "read" -> readUserData(targetContext, fixture)
+                    null -> {
+                        verifyRoomSchema(targetContext)
+                        verifyLibraryScan(targetContext)
+                        writeUserData(targetContext, context)
+                        readUserData(targetContext, fixture)
+                        verifyLifecycle(fixture)
+                        verifyCloseAndRestart(fixture)
+                        verifyMedia3(fixture)
+                        verifyServicePlayback()
+                    }
+                    else -> error("Unknown persistence test step")
+                }
             } finally {
                 fixture.delete()
             }
-            result.putString("stream", "\nHowl engine API, Media3 playback, service reconnect, audio focus, Room schema, and library scan passed.\n")
+            val summary = persistenceStep?.let { "User data persistence step $it passed." }
+                ?: "Howl engine, playback, audio focus, schema, scan, and user data checks passed."
+            result.putString("stream", "\n$summary\n")
             Activity.RESULT_OK
         } catch (error: Throwable) {
             result.putString("stream", "\n" + Log.getStackTraceString(error))

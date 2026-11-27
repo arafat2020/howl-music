@@ -13,6 +13,23 @@ interface PlaylistDao {
 
     @Insert suspend fun insertEntry(entry: PlaylistTrackEntity): Long
 
+    @Insert suspend fun insertEntries(entries: List<PlaylistTrackEntity>)
+
+    @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
+    suspend fun renamePlaylist(playlistId: Long, name: String): Int
+
+    @Query("DELETE FROM playlists WHERE id = :playlistId")
+    suspend fun deletePlaylist(playlistId: Long): Int
+
+    @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId AND id = :entryId")
+    suspend fun removeEntry(playlistId: Long, entryId: Long): Int
+
+    @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun clearEntries(playlistId: Long)
+
+    @Query("SELECT MAX(position) FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun lastPosition(playlistId: Long): Int?
+
     @Query("SELECT * FROM playlists ORDER BY name, id")
     suspend fun playlists(): List<PlaylistEntity>
 
