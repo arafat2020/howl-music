@@ -5,7 +5,7 @@
 namespace howl {
 
 /**
- * DSP graph with a smoothed preamp.
+ * DSP graph with a smoothed preamp followed by a graphic equalizer.
  *
  * Call prepare / reset / setBypassed while processing is stopped.
  * Audio callback: process() only — no heap alloc, no locks, no I/O.
@@ -32,6 +32,9 @@ public:
     /** Thread-safe target update. Finite dB values clamp to [-24, +12]. */
     bool setTargetGainDb(float gainDb) noexcept;
 
+    /** Thread-safe update. Band order matches GraphicEq::kBandCentersHz. */
+    bool setEqBandGainDb(int32_t band, float gainDb) noexcept;
+
     void setBypassed(bool bypassed);
     bool isBypassed() const;
 
@@ -43,7 +46,7 @@ public:
 
     /**
      * In-place process interleaved Float32 (L R L R …).
-     * Identity when bypassed or when the active node is unity.
+     * Identity when bypassed or when all gain settings are flat.
      */
     void process(float* interleaved, int32_t frames);
 

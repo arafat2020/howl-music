@@ -230,6 +230,10 @@ Status Engine::setPreampGainDb(float gainDb) noexcept {
     return processGraph_.setTargetGainDb(gainDb) ? Status::Ok : Status::InvalidArgument;
 }
 
+Status Engine::setEqBandGainDb(int32_t band, float gainDb) noexcept {
+    return processGraph_.setEqBandGainDb(band, gainDb) ? Status::Ok : Status::InvalidArgument;
+}
+
 Status Engine::setRepeatMode(RepeatMode mode) {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.setRepeatMode(mode);
@@ -912,6 +916,13 @@ int32_t howl_engine_set_preamp_gain_db(HowlEngineHandle* engine, float gain_db) 
         return static_cast<int32_t>(howl::Status::NullHandle);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setPreampGainDb(gain_db));
+}
+
+int32_t howl_engine_set_eq_band_gain_db(HowlEngineHandle* engine, int32_t band, float gain_db) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setEqBandGainDb(band, gain_db));
 }
 
 int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode) {

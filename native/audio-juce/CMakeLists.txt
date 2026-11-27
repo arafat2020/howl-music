@@ -11,6 +11,7 @@ endif()
 add_library(howl_audio_juce STATIC
     src/process_graph.cpp
     src/gain_node.cpp
+    src/graphic_eq.cpp
 )
 
 target_include_directories(howl_audio_juce

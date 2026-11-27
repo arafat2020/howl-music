@@ -61,6 +61,10 @@ class HowlEngine private constructor(
     /** Set file playback preamp in dB. Finite values clamp to -24..+12. */
     fun setPreampGainDb(gainDb: Float): Int = nativeSetPreampGainDb(requireHandle(), gainDb)
 
+    /** Set one file playback EQ band (0 = 31.25 Hz, 9 = 16 kHz). Gains clamp to -12..+12 dB. */
+    fun setEqBandGainDb(band: Int, gainDb: Float): Int =
+        nativeSetEqBandGainDb(requireHandle(), band, gainDb)
+
     fun setRepeatMode(mode: RepeatMode): Int =
         nativeSetRepeatMode(requireHandle(), mode.nativeCode)
 
@@ -188,6 +192,7 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeNext(handle: Long): Int
         @JvmStatic private external fun nativePrevious(handle: Long): Int
         @JvmStatic private external fun nativeSetPreampGainDb(handle: Long, gainDb: Float): Int
+        @JvmStatic private external fun nativeSetEqBandGainDb(handle: Long, band: Int, gainDb: Float): Int
         @JvmStatic private external fun nativeSetRepeatMode(handle: Long, mode: Int): Int
         @JvmStatic private external fun nativeQueueSize(handle: Long): Int
         @JvmStatic private external fun nativeCurrentIndex(handle: Long): Int

@@ -22,7 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,11 @@ import kotlinx.coroutines.delay
 import java.io.File
 import kotlin.math.roundToInt
 
+private val eqBandLabels = listOf(
+    "31.25 Hz", "62.5 Hz", "125 Hz", "250 Hz", "500 Hz",
+    "1 kHz", "2 kHz", "4 kHz", "8 kHz", "16 kHz",
+)
+
 /**
  * Phase 2.4: two-track FLAC queue via openDecoder (WAV still supported).
  */
@@ -49,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf("Loading…")
     private var running by mutableStateOf(false)
     private var paused by mutableStateOf(false)
+    private val eqBandGainsDb = mutableStateListOf(*Array(eqBandLabels.size) { 0 })
     private var preampGainDb by mutableStateOf(0)
     private var fileMode by mutableStateOf(true)
     private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
@@ -98,6 +106,8 @@ class MainActivity : ComponentActivity() {
                 canControl = engine != null,
                 preampGainDb = preampGainDb,
                 onPreampGainChanged = ::onPreampGainChanged,
+                eqBandGainsDb = eqBandGainsDb,
+                onEqBandGainChanged = ::onEqBandGainChanged,
                 onToggleMode = ::onToggleMode,
                 onStart = ::onStartPlayback,
                 onStop = ::onStopPlayback,
@@ -151,6 +161,17 @@ class MainActivity : ComponentActivity() {
             preampGainDb = gainDb
         } else {
             status = "preamp=${eng.statusName(code)}"
+        }
+    }
+
+    private fun onEqBandGainChanged(band: Int, gainDb: Int) {
+        val eng = engine ?: return
+        if (gainDb == eqBandGainsDb[band]) return
+        val code = eng.setEqBandGainDb(band, gainDb.toFloat())
+        if (code == 0) {
+            eqBandGainsDb[band] = gainDb
+        } else {
+            status = "EQ=${eng.statusName(code)}"
         }
     }
 
@@ -278,6 +299,8 @@ private fun PlayerScreen(
     canControl: Boolean,
     preampGainDb: Int,
     onPreampGainChanged: (Int) -> Unit,
+    eqBandGainsDb: List<Int>,
+    onEqBandGainChanged: (Int, Int) -> Unit,
     onToggleMode: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -431,6 +454,7 @@ private fun PlayerScreen(
                 valueRange = -24f..12f,
                 steps = 35,
             )
+            EqDebugControl(eqBandGainsDb, canControl, muted, onEqBandGainChanged)
             Text("Boost can clip.", color = muted, fontSize = 12.sp)
         }
         Text(
@@ -465,4 +489,36 @@ private fun PlayerScreen(
             modifier = Modifier.padding(top = 12.dp),
         )
     }
+}
+
+@Composable
+private fun EqDebugControl(
+    bandGainsDb: List<Int>,
+    canControl: Boolean,
+    textColor: Color,
+    onGainChanged: (Int, Int) -> Unit,
+) {
+    var band by remember { mutableStateOf(5) }
+    val appliedGain = bandGainsDb[band]
+    var gainDb by remember(band, appliedGain) { mutableStateOf(appliedGain) }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(onClick = { band-- }, enabled = band > 0) { Text("Lower band") }
+        Text(eqBandLabels[band], color = textColor)
+        Button(onClick = { band++ }, enabled = band < eqBandLabels.lastIndex) {
+            Text("Higher band")
+        }
+    }
+    Text("EQ gain: $gainDb dB", color = textColor)
+    Slider(
+        value = gainDb.toFloat(),
+        onValueChange = { gainDb = it.roundToInt() },
+        onValueChangeFinished = { onGainChanged(band, gainDb) },
+        enabled = canControl,
+        valueRange = -12f..12f,
+        steps = 23,
+    )
 }

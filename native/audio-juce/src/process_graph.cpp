@@ -1,4 +1,5 @@
 #include "howl/dsp/process_graph.h"
+#include "howl/dsp/graphic_eq.h"
 
 #include "gain_node.h"
 
@@ -14,6 +15,7 @@ struct ProcessGraph::Impl {
     int32_t channelCount = 0;
 
     GainNode gain;
+    GraphicEq eq;
 };
 
 ProcessGraph::ProcessGraph() : impl_(new Impl) {}
@@ -37,6 +39,7 @@ void ProcessGraph::prepare(double sampleRate, int32_t maxBlockSize, int32_t chan
     impl_->channelCount = channelCount;
 
     impl_->gain.prepare(sampleRate);
+    impl_->eq.prepare(sampleRate, channelCount);
 
     impl_->prepared = true;
 }
@@ -46,10 +49,15 @@ void ProcessGraph::reset() {
         return;
     }
     impl_->gain.reset();
+    impl_->eq.reset();
 }
 
 bool ProcessGraph::setTargetGainDb(float gainDb) noexcept {
     return impl_->gain.setTargetGainDb(gainDb);
+}
+
+bool ProcessGraph::setEqBandGainDb(int32_t band, float gainDb) noexcept {
+    return impl_->eq.setBandGainDb(band, gainDb);
 }
 
 void ProcessGraph::setBypassed(bool bypassed) {
@@ -88,6 +96,7 @@ void ProcessGraph::process(float* interleaved, int32_t frames) {
     }
 
     impl_->gain.process(interleaved, frames, impl_->channelCount);
+    impl_->eq.process(interleaved, frames);
 }
 
 const char* ProcessGraph::backendName() {

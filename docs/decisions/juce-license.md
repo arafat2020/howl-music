@@ -35,4 +35,4 @@ Android NDK builds default to `HOWL_WITH_JUCE=OFF` (same `ProcessGraph` API) unt
 
 ## Escape hatch
 
-`HOWL_WITH_JUCE=OFF` builds the native preamp with the same public API and realtime wiring. Future DSP nodes that depend on JUCE require `HOWL_WITH_JUCE=ON` and a commercial license for proprietary builds.
+`HOWL_WITH_JUCE=OFF` builds the native preamp and graphic EQ with the same public API and realtime wiring. Future DSP nodes that depend on JUCE require `HOWL_WITH_JUCE=ON` and a commercial license for proprietary builds.

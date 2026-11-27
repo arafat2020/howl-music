@@ -61,6 +61,7 @@ public:
     Status next();
     Status previous();
     Status setPreampGainDb(float gainDb) noexcept;
+    Status setEqBandGainDb(int32_t band, float gainDb) noexcept;
     Status setRepeatMode(RepeatMode mode);
 
     int queueSize() const;
@@ -151,6 +152,7 @@ int32_t howl_engine_play_at(HowlEngineHandle* engine, int32_t index);
 int32_t howl_engine_next(HowlEngineHandle* engine);
 int32_t howl_engine_previous(HowlEngineHandle* engine);
 int32_t howl_engine_set_preamp_gain_db(HowlEngineHandle* engine, float gain_db);
+int32_t howl_engine_set_eq_band_gain_db(HowlEngineHandle* engine, int32_t band, float gain_db);
 int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode);
 int32_t howl_engine_queue_size(HowlEngineHandle* engine);
 int32_t howl_engine_current_index(HowlEngineHandle* engine);

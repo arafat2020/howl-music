@@ -23,6 +23,7 @@ add_executable(howl_native_tests
     test_queue_controller.cpp
     test_flac_decoder.cpp
     test_process_graph.cpp
+    test_graphic_eq.cpp
 )
 
 target_link_libraries(howl_native_tests
