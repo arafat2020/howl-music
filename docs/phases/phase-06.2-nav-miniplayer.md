@@ -3,7 +3,7 @@
 **Milestone:** 6 — Visual product  
 **Priority:** Foundational  
 **Depends on:** 6.1, 4.3  
-**Status:** Not started
+**Status:** Implemented and verified on the Android emulator
 
 ## Objective
 
@@ -21,6 +21,12 @@ Scaffold
   MiniPlayer bar → MediaController / Player state
   Expand action → Now Playing (placeholder destination OK)
 ```
+
+## Shell and controller
+
+Library, EQ, and Settings are top-level destinations. A shared scaffold keeps the mini-player above the tab bar and uses the theme’s safe-drawing insets. Tapping the track opens the Now Playing placeholder. Back returns to the active tab. The Now Playing placeholder holds the existing seek and stop controls. Debug tools are under Settings. [Navigation Compose guide](https://developer.android.com/codelabs/jetpack-compose-navigation)
+
+The Activity owns one controller connection and listens for Media3 events. The mini-player uses that snapshot for metadata and play/pause. The Now Playing placeholder polls position only while it is visible and playback is requested. Rotation restores the navigation stack and reconnects to the service-owned playback session.
 
 ## Learning objectives
 
@@ -65,10 +71,10 @@ android-app/.../ui/player/MiniPlayer.kt
 
 ## Acceptance criteria
 
-- [ ] Navigation shell works.
-- [ ] Mini-player reflects playback state.
-- [ ] Play/pause from mini-player works.
-- [ ] Design tokens used (no rogue colors).
+- [x] Navigation shell works.
+- [x] Mini-player reflects playback state.
+- [x] Play/pause from mini-player works.
+- [x] Design tokens used (no rogue colors).
 
 ## Review checklist
 
@@ -84,12 +90,12 @@ android-app/.../ui/player/MiniPlayer.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Compose navigation tabs, persistent mini-player, Now Playing placeholder, and controller state wired to the shell. |
+| Files created/modified | MainActivity, HowlNavHost, MiniPlayer, Compose Navigation dependency, and this phase report. |
+| Tests executed | Android debug build and unit test, emulator instrumentation, and emulator interaction and rotation checks. |
+| Results | Started playback from the mini-player, switched to EQ, rotated with playback active, expanded to Now Playing, returned to EQ, paused, and confirmed the same track in Settings. |
+| Known limitations | Tabs are placeholders. Playback uses the bundled sample, which has no embedded cover. The mini-player shows its artwork fallback. |
+| Decisions made | Keep playback and position authoritative in MediaSession and the native engine. Preserve tab state in Navigation Compose. |
 | Next phase | 6.3 — Library UI |
 
 **Approval required before Phase 6.3.**
