@@ -10,6 +10,7 @@ endif()
 
 add_library(howl_audio_juce STATIC
     src/process_graph.cpp
+    src/gain_node.cpp
 )
 
 target_include_directories(howl_audio_juce
@@ -56,5 +57,5 @@ else()
         PUBLIC
             HOWL_WITH_JUCE=0
     )
-    message(STATUS "howl_audio_juce: HOWL_WITH_JUCE=OFF (identity ProcessGraph)")
+    message(STATUS "howl_audio_juce: HOWL_WITH_JUCE=OFF (native ProcessGraph)")
 endif()

@@ -3,7 +3,7 @@
 **Milestone:** 3 — DSP graph  
 **Priority:** Foundational  
 **Depends on:** 3.1  
-**Status:** Not started
+**Status:** Implemented — pending device listening check
 
 ## Objective
 
@@ -63,10 +63,10 @@ native/audio-juce/src/gain_node.cpp
 
 ## Acceptance criteria
 
-- [ ] Gain audible and measurable.
-- [ ] Smoothed changes without obvious clicks.
-- [ ] Clamped range (e.g. −24..+12 dB) documented.
-- [ ] Real-time safe updates.
+- [ ] Gain audible on device. Host buffer tests confirm measurable scaling.
+- [ ] Smoothed changes without obvious clicks on device. Host tests confirm the 20 ms ramp.
+- [x] Clamped range of −24 through +12 dB documented.
+- [x] Real-time safe updates through a lock-free atomic target.
 
 ## Review checklist
 
@@ -82,12 +82,14 @@ native/audio-juce/src/gain_node.cpp
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | File playback preamp with a 20 ms stereo-linked linear-amplitude ramp, an Engine/JNI gain setter, and a debug slider in FLAC queue mode. |
+| Files created/modified | Gain node, ProcessGraph, Engine and C API, Oboe output, JNI and Kotlin bridge, Android debug screen, host graph tests, and DSP documentation. |
+| Tests executed | Host suite with JUCE enabled and disabled. Android debug APK build and unit test. |
+| Results | 53/53 host tests passed in each configuration. Android debug APK built for arm64-v8a and x86_64. Android unit test passed. |
+| Known limitations | ADB had no online Android target for the listening check. Gain applies to file playback. Boost can clip. |
+| Decisions made | Use the same native gain node in both build configurations so the default Android build supports preamp without JUCE. |
 | Next phase | 3.3 — Graphic EQ |
+
+For the device check, start the debug app in FLAC queue mode, select Repeat All, press Play, then move the Preamp slider between 0 dB and −24 dB while listening for abrupt level changes or clicks.
 
 **Approval required before Phase 3.3.**

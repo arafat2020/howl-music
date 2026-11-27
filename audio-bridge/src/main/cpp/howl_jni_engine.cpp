@@ -142,6 +142,15 @@ Java_com_howl_music_bridge_HowlEngine_nativePrevious(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeSetPreampGainDb(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle,
+    jfloat gainDb) {
+    return howl_engine_set_preamp_gain_db(reinterpret_cast<HowlEngineHandle*>(handle), gainDb);
+}
+
+JNIEXPORT jint JNICALL
 Java_com_howl_music_bridge_HowlEngine_nativeSetRepeatMode(
     JNIEnv* /* env */,
     jobject /* thiz */,

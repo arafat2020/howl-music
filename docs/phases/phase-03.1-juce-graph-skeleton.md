@@ -98,4 +98,8 @@ docs/decisions/juce-license.md
 | Decisions made | Commercial JUCE license required before proprietary store ship. Version `howl_engine/0.8.0-dsp-graph`. |
 | Next phase | **3.2** — Preamp / gain |
 
+## Verification before Phase 3.2
+
+The Phase 3.1 baseline passed all 50 host tests with JUCE enabled, including identity, bypass, and the graph CPU sanity check. The license decision is recorded, the JUCE target uses DSP modules without GUI modules, and the Oboe file callback calls the graph after reading from the ring buffer. The original report records an Android install. A fresh device listening check was unavailable.
+
 **Approval required before Phase 3.2.**

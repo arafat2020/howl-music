@@ -31,8 +31,8 @@ Via CMake `JUCE_MODULES_ONLY` + `target_link_libraries(... juce::juce_dsp)` (hos
 
 Explicitly **not** linked: `juce_gui_basics`, `juce_graphics`, `juce_audio_devices`, `juce_audio_utils`, Projucer Android GUI wrappers.
 
-Android NDK builds default to `HOWL_WITH_JUCE=OFF` (identity `ProcessGraph`, same public API) until packaging is hardened.
+Android NDK builds default to `HOWL_WITH_JUCE=OFF` (same `ProcessGraph` API) until packaging is hardened.
 
 ## Escape hatch
 
-`HOWL_WITH_JUCE=OFF` builds an identity `ProcessGraph` with the same public API and realtime wiring, so CI/host can run without fetching JUCE. Shipping DSP features (3.2+) expect `HOWL_WITH_JUCE=ON` plus a commercial license for proprietary builds.
+`HOWL_WITH_JUCE=OFF` builds the native preamp with the same public API and realtime wiring. Future DSP nodes that depend on JUCE require `HOWL_WITH_JUCE=ON` and a commercial license for proprietary builds.

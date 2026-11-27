@@ -1,12 +1,8 @@
 #include "howl/dsp/process_graph.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
+#include "gain_node.h"
 
-#if HOWL_WITH_JUCE
-#include <juce_dsp/juce_dsp.h>
-#endif
+#include <cmath>
 
 namespace howl {
 
@@ -17,9 +13,7 @@ struct ProcessGraph::Impl {
     int32_t maxBlockSize = 0;
     int32_t channelCount = 0;
 
-#if HOWL_WITH_JUCE
-    juce::dsp::Gain<float> gain;
-#endif
+    GainNode gain;
 };
 
 ProcessGraph::ProcessGraph() : impl_(new Impl) {}
@@ -33,7 +27,7 @@ void ProcessGraph::prepare(double sampleRate, int32_t maxBlockSize, int32_t chan
     if (impl_ == nullptr) {
         return;
     }
-    if (!(sampleRate > 0.0) || maxBlockSize <= 0 || channelCount <= 0) {
+    if (!std::isfinite(sampleRate) || sampleRate <= 0.0 || maxBlockSize <= 0 || channelCount <= 0) {
         impl_->prepared = false;
         return;
     }
@@ -42,15 +36,7 @@ void ProcessGraph::prepare(double sampleRate, int32_t maxBlockSize, int32_t chan
     impl_->maxBlockSize = maxBlockSize;
     impl_->channelCount = channelCount;
 
-#if HOWL_WITH_JUCE
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32>(maxBlockSize);
-    spec.numChannels = static_cast<juce::uint32>(channelCount);
-    impl_->gain.prepare(spec);
-    impl_->gain.setGainLinear(1.0f);  // identity node for Phase 3.1
-    impl_->gain.reset();
-#endif
+    impl_->gain.prepare(sampleRate);
 
     impl_->prepared = true;
 }
@@ -59,9 +45,11 @@ void ProcessGraph::reset() {
     if (impl_ == nullptr) {
         return;
     }
-#if HOWL_WITH_JUCE
     impl_->gain.reset();
-#endif
+}
+
+bool ProcessGraph::setTargetGainDb(float gainDb) noexcept {
+    return impl_->gain.setTargetGainDb(gainDb);
 }
 
 void ProcessGraph::setBypassed(bool bypassed) {
@@ -99,32 +87,14 @@ void ProcessGraph::process(float* interleaved, int32_t frames) {
         return;
     }
 
-    const int32_t ch = impl_->channelCount;
-    if (ch <= 0) {
-        return;
-    }
-
-#if HOWL_WITH_JUCE
-    // Unity Gain applied sample-wise — proves juce_dsp is linked; bit-stable at 1.0.
-    const float g = impl_->gain.getGainLinear();
-    if (std::fabs(g - 1.0f) < 1.0e-7f) {
-        return;  // exact identity fast path
-    }
-    const int32_t n = frames * ch;
-    for (int32_t i = 0; i < n; ++i) {
-        interleaved[i] *= g;
-    }
-#else
-    (void)ch;
-    (void)interleaved;
-#endif
+    impl_->gain.process(interleaved, frames, impl_->channelCount);
 }
 
 const char* ProcessGraph::backendName() {
 #if HOWL_WITH_JUCE
     return "juce_dsp";
 #else
-    return "identity";
+    return "native";
 #endif
 }
 

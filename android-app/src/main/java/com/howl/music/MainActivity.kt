@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +37,7 @@ import com.howl.music.bridge.HowlEngine
 import com.howl.music.bridge.TransportSnapshot
 import kotlinx.coroutines.delay
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * Phase 2.4: two-track FLAC queue via openDecoder (WAV still supported).
@@ -45,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf("Loading…")
     private var running by mutableStateOf(false)
     private var paused by mutableStateOf(false)
+    private var preampGainDb by mutableStateOf(0)
     private var fileMode by mutableStateOf(true)
     private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
     private var transportText by mutableStateOf(TransportSnapshot.Empty.formatLine())
@@ -91,6 +96,8 @@ class MainActivity : ComponentActivity() {
                 paused = paused,
                 fileMode = fileMode,
                 canControl = engine != null,
+                preampGainDb = preampGainDb,
+                onPreampGainChanged = ::onPreampGainChanged,
                 onToggleMode = ::onToggleMode,
                 onStart = ::onStartPlayback,
                 onStop = ::onStopPlayback,
@@ -134,6 +141,17 @@ class MainActivity : ComponentActivity() {
         if (running) return
         fileMode = !fileMode
         status = if (fileMode) "mode=File (2× FLAC queue)" else "mode=Sine"
+    }
+
+    private fun onPreampGainChanged(gainDb: Int) {
+        val eng = engine ?: return
+        if (gainDb == preampGainDb) return
+        val code = eng.setPreampGainDb(gainDb.toFloat())
+        if (code == 0) {
+            preampGainDb = gainDb
+        } else {
+            status = "preamp=${eng.statusName(code)}"
+        }
     }
 
     private fun onStartPlayback() {
@@ -258,6 +276,8 @@ private fun PlayerScreen(
     paused: Boolean,
     fileMode: Boolean,
     canControl: Boolean,
+    preampGainDb: Int,
+    onPreampGainChanged: (Int) -> Unit,
     onToggleMode: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -276,6 +296,7 @@ private fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(background)
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -396,6 +417,21 @@ private fun PlayerScreen(
             ) {
                 Text("Seek mid")
             }
+        }
+        if (BuildConfig.DEBUG && fileMode) {
+            Text(
+                text = "Preamp: $preampGainDb dB",
+                color = muted,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Slider(
+                value = preampGainDb.toFloat(),
+                onValueChange = { onPreampGainChanged(it.roundToInt()) },
+                enabled = canControl,
+                valueRange = -24f..12f,
+                steps = 35,
+            )
+            Text("Boost can clip.", color = muted, fontSize = 12.sp)
         }
         Text(
             text = queue,

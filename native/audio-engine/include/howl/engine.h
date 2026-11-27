@@ -1,6 +1,7 @@
 #pragma once
 
 #include "howl/diagnostics.h"
+#include "howl/dsp/process_graph.h"
 #include "howl/queue.h"
 #include "howl/status.h"
 #include "howl/transport.h"
@@ -13,7 +14,6 @@
 #if defined(__ANDROID__)
 #include "howl/audio_output.h"
 #include "howl/decode_worker.h"
-#include "howl/dsp/process_graph.h"
 #include "howl/pcm_ring_buffer.h"
 #include <thread>
 #endif
@@ -60,6 +60,7 @@ public:
     Status playAt(int index);
     Status next();
     Status previous();
+    Status setPreampGainDb(float gainDb) noexcept;
     Status setRepeatMode(RepeatMode mode);
 
     int queueSize() const;
@@ -107,6 +108,7 @@ private:
     std::atomic<int64_t> positionFrames_{0};
     int64_t durationFrames_{0};
     int32_t fileSampleRate_{0};
+    ProcessGraph processGraph_;
 
 #if defined(__ANDROID__)
     static constexpr int32_t kRingCapacityFrames = 16384;
@@ -115,7 +117,6 @@ private:
     std::unique_ptr<PcmRingBuffer> ring_;
     std::unique_ptr<DecodeWorker> worker_;
     std::unique_ptr<AudioOutput> output_;
-    ProcessGraph processGraph_;
 
     std::thread queueWatchThread_;
     std::atomic<bool> queueWatchRunning_{false};
@@ -149,6 +150,7 @@ int32_t howl_engine_clear_queue(HowlEngineHandle* engine);
 int32_t howl_engine_play_at(HowlEngineHandle* engine, int32_t index);
 int32_t howl_engine_next(HowlEngineHandle* engine);
 int32_t howl_engine_previous(HowlEngineHandle* engine);
+int32_t howl_engine_set_preamp_gain_db(HowlEngineHandle* engine, float gain_db);
 int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode);
 int32_t howl_engine_queue_size(HowlEngineHandle* engine);
 int32_t howl_engine_current_index(HowlEngineHandle* engine);

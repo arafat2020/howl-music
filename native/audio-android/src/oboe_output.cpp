@@ -27,7 +27,8 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
     int32_t channels = 2;
     OutputMode mode = OutputMode::Sine;
     PcmRingBuffer* ring = nullptr;
-    ProcessGraph* graph = nullptr;
+    static_assert(std::atomic<ProcessGraph*>::is_always_lock_free);
+    std::atomic<ProcessGraph*> graph{nullptr};
     std::atomic<int64_t>* positionFrames = nullptr;
     std::atomic<bool> paused{false};
 
@@ -41,7 +42,7 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
         oboe::AudioStream* audioStream,
         void* audioData,
         int32_t numFrames) override {
-        // REALTIME: no alloc, no log, no JNI, no locks — atomics + ring pop only.
+        // REALTIME: no alloc, no log, no JNI, no locks on the ring/graph path.
         callbackCount.fetch_add(1, std::memory_order_relaxed);
         lastFramesPerCallback.store(numFrames, std::memory_order_relaxed);
 
@@ -69,8 +70,9 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
                 underrunCount.fetch_add(1, std::memory_order_relaxed);
             }
             // Graph after pop: process only frames that contain audio.
-            if (graph != nullptr && got > 0) {
-                graph->process(out, got);
+            auto* activeGraph = graph.load(std::memory_order_acquire);
+            if (activeGraph != nullptr && got > 0) {
+                activeGraph->process(out, got);
             }
             return oboe::DataCallbackResult::Continue;
         }
@@ -114,7 +116,7 @@ void AudioOutput::setPositionFrames(std::atomic<int64_t>* positionFrames) {
 }
 
 void AudioOutput::setProcessGraph(ProcessGraph* graph) {
-    impl_->graph = graph;
+    impl_->graph.store(graph, std::memory_order_release);
 }
 
 void AudioOutput::setPaused(bool paused) {

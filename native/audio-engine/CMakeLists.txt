@@ -20,14 +20,12 @@ target_compile_features(howl_audio_engine PUBLIC cxx_std_20)
 
 # DecodeWorker uses std::thread.
 find_package(Threads REQUIRED)
-target_link_libraries(howl_audio_engine PUBLIC Threads::Threads)
+target_link_libraries(howl_audio_engine PUBLIC Threads::Threads howl_audio_juce)
 
 if(ANDROID)
-    # engine.h includes audio_output.h + process_graph.h on Android.
+    # engine.h includes audio_output.h on Android.
     target_include_directories(howl_audio_engine
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../audio-android/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/../audio-juce/include
     )
-    target_link_libraries(howl_audio_engine PUBLIC howl_audio_juce)
 endif()

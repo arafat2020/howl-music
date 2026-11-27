@@ -226,6 +226,10 @@ Status Engine::previous() {
 #endif
 }
 
+Status Engine::setPreampGainDb(float gainDb) noexcept {
+    return processGraph_.setTargetGainDb(gainDb) ? Status::Ok : Status::InvalidArgument;
+}
+
 Status Engine::setRepeatMode(RepeatMode mode) {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.setRepeatMode(mode);
@@ -327,8 +331,6 @@ Status Engine::start() {
             state_ = EngineState::Idle;
             return wSt;
         }
-        (void)worker->prefill(8);
-        worker->setPushEnabled(true);
     } else {
         output->setOutputMode(OutputMode::Sine, nullptr);
         output->setPositionFrames(nullptr);
@@ -350,6 +352,8 @@ Status Engine::start() {
             output_ = std::move(output);
             if (mode == PlayMode::File) {
                 prepareProcessGraphLocked();
+                (void)worker_->prefill(8);
+                worker_->setPushEnabled(true);
             }
             state_ = EngineState::Running;
             if (mode == PlayMode::File) {
@@ -396,9 +400,6 @@ Status Engine::stop() {
             return Status::Ok;
         }
         state_ = EngineState::Stopping;
-        if (output_) {
-            output_->setProcessGraph(nullptr);
-        }
         toJoin = std::move(worker_);
         toStop = std::move(output_);
         toDrop = std::move(ring_);
@@ -410,7 +411,6 @@ Status Engine::stop() {
         toJoin.reset();
     }
     if (toStop) {
-        toStop->setProcessGraph(nullptr);
         (void)toStop->stop();
         toStop.reset();
     }
@@ -678,7 +678,6 @@ Status Engine::changeTrack(const std::string& path) {
         // Reopen Oboe only when rate/channels no longer match the open stream.
         if (fmt.sampleRate != output_->sampleRate() ||
             fmt.channelCount != output_->channelCount()) {
-            output_->setProcessGraph(nullptr);
             (void)output_->stop();
             output_ = std::make_unique<AudioOutput>();
             output_->setOutputMode(OutputMode::Ring, ring_.get());
@@ -906,6 +905,13 @@ int32_t howl_engine_previous(HowlEngineHandle* engine) {
         return static_cast<int32_t>(howl::Status::NullHandle);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->previous());
+}
+
+int32_t howl_engine_set_preamp_gain_db(HowlEngineHandle* engine, float gain_db) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setPreampGainDb(gain_db));
 }
 
 int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode) {

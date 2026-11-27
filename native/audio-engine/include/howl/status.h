@@ -15,6 +15,7 @@ enum class Status : int32_t {
     FileOpenFailed = 6,
     UnsupportedFormat = 7,
     IoError = 8,
+    InvalidArgument = 9,
 };
 
 enum class EngineState : int32_t {
@@ -42,6 +43,8 @@ inline const char* statusToString(Status s) {
             return "FileOpenFailed";
         case Status::UnsupportedFormat:
             return "UnsupportedFormat";
+        case Status::InvalidArgument:
+            return "InvalidArgument";
         case Status::IoError:
             return "IoError";
     }

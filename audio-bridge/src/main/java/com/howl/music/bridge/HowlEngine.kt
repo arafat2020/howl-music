@@ -58,6 +58,9 @@ class HowlEngine private constructor(
 
     fun previous(): Int = nativePrevious(requireHandle())
 
+    /** Set file playback preamp in dB. Finite values clamp to -24..+12. */
+    fun setPreampGainDb(gainDb: Float): Int = nativeSetPreampGainDb(requireHandle(), gainDb)
+
     fun setRepeatMode(mode: RepeatMode): Int =
         nativeSetRepeatMode(requireHandle(), mode.nativeCode)
 
@@ -184,6 +187,7 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativePlayAt(handle: Long, index: Int): Int
         @JvmStatic private external fun nativeNext(handle: Long): Int
         @JvmStatic private external fun nativePrevious(handle: Long): Int
+        @JvmStatic private external fun nativeSetPreampGainDb(handle: Long, gainDb: Float): Int
         @JvmStatic private external fun nativeSetRepeatMode(handle: Long, mode: Int): Int
         @JvmStatic private external fun nativeQueueSize(handle: Long): Int
         @JvmStatic private external fun nativeCurrentIndex(handle: Long): Int

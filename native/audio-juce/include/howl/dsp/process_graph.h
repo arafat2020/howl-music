@@ -5,9 +5,9 @@
 namespace howl {
 
 /**
- * Ordered DSP graph placeholder (Phase 3.1).
+ * DSP graph with a smoothed preamp.
  *
- * Control thread: prepare / reset / setBypassed.
+ * Call prepare / reset / setBypassed while processing is stopped.
  * Audio callback: process() only — no heap alloc, no locks, no I/O.
  *
  * JUCE types stay inside the .cpp (or disabled via HOWL_WITH_JUCE=0).
@@ -28,6 +28,9 @@ public:
 
     /** Clear smoothed state; safe on control thread. */
     void reset();
+
+    /** Thread-safe target update. Finite dB values clamp to [-24, +12]. */
+    bool setTargetGainDb(float gainDb) noexcept;
 
     void setBypassed(bool bypassed);
     bool isBypassed() const;
