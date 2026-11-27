@@ -18,6 +18,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
+import com.howl.music.data.db.verifyRoomSchema
 import com.howl.music.media.HowlMedia3Player
 import com.howl.music.media.HowlPlaybackService
 import java.io.File
@@ -35,6 +36,7 @@ class EngineApiInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         val status = try {
+            verifyRoomSchema(targetContext)
             val fixture = File.createTempFile("howl-🎵-", ".wav", targetContext.cacheDir)
             try {
                 targetContext.assets.open("sine_880_16bit_stereo.wav").use { input ->
@@ -47,7 +49,7 @@ class EngineApiInstrumentation : Instrumentation() {
             } finally {
                 fixture.delete()
             }
-            result.putString("stream", "\nHowl engine API, Media3 playback, service reconnect, and audio focus passed.\n")
+            result.putString("stream", "\nHowl engine API, Media3 playback, service reconnect, audio focus, and Room schema passed.\n")
             Activity.RESULT_OK
         } catch (error: Throwable) {
             result.putString("stream", "\n" + Log.getStackTraceString(error))
