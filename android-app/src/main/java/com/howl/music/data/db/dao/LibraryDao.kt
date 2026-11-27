@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import com.howl.music.data.db.entities.AlbumEntity
 import com.howl.music.data.db.entities.ArtistEntity
 import com.howl.music.data.db.entities.TrackEntity
@@ -17,6 +18,24 @@ interface LibraryDao {
     @Insert suspend fun insertTrack(track: TrackEntity): Long
 
     @Update suspend fun updateTrack(track: TrackEntity): Int
+
+    @Upsert suspend fun upsertArtists(artists: List<ArtistEntity>)
+
+    @Upsert suspend fun upsertAlbums(albums: List<AlbumEntity>)
+
+    @Upsert suspend fun upsertTracks(tracks: List<TrackEntity>)
+
+    @Query("SELECT * FROM artists WHERE sourceKey IN (:keys)")
+    suspend fun artistsBySourceKeys(keys: List<String>): List<ArtistEntity>
+
+    @Query("SELECT * FROM albums WHERE sourceKey IN (:keys)")
+    suspend fun albumsBySourceKeys(keys: List<String>): List<AlbumEntity>
+
+    @Query("SELECT * FROM tracks WHERE uri IN (:uris)")
+    suspend fun tracksByUris(uris: List<String>): List<TrackEntity>
+
+    @Query("SELECT COUNT(*) FROM tracks")
+    suspend fun trackCount(): Int
 
     @Query("SELECT * FROM artists ORDER BY name, id")
     suspend fun artists(): List<ArtistEntity>
