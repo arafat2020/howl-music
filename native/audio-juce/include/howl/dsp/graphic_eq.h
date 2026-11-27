@@ -1,8 +1,8 @@
 #pragma once
 
+#include "howl/dsp/eq_state.h"
+
 #include <array>
-#include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -10,37 +10,41 @@ namespace howl {
 
 class GraphicEq {
 public:
-    static constexpr std::array<double, 10> kBandCentersHz{
+    static constexpr std::array<double, kEqBandCount> kBandCentersHz{
         31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
     };
 
-    /** Control-thread update. Finite gains clamp to [-12, +12] dB. */
-    bool setBandGainDb(int32_t band, float gainDb) noexcept;
-
-    /** Call while processing is stopped. Band settings survive preparation. */
+    /** Called by the graph with validated targets at a block boundary. */
+    void setBandGainsDb(const std::array<float, kEqBandCount>& gainsDb) noexcept;
     void prepare(double sampleRate, int32_t channelCount);
     void reset() noexcept;
-
-    /** Audio thread. Coefficients and channel histories are updated in place. */
     void process(float* interleaved, int32_t frames) noexcept;
 
 private:
     struct FilterState {
-        double z1 = 0.0;
-        double z2 = 0.0;
+        double x1 = 0.0;
+        double x2 = 0.0;
+        double y1 = 0.0;
+        double y2 = 0.0;
     };
 
+    // Residual mix, a1, a2. Only the mix goes to zero at flat.
+    using Coefficients = std::array<double, 3>;
+
     struct Band {
-        std::atomic<float> targetDb{0.0f};
+        float targetDb = 0.0f;
         float appliedDb = 0.0f;
-        // Normalized b0, b1, b2, a1, a2.
-        std::array<double, 5> coefficients{};
+        Coefficients current{};
+        Coefficients destination{};
+        Coefficients step{};
+        int32_t framesRemaining = 0;
         std::vector<FilterState> channels;
     };
 
-    static_assert(std::atomic<float>::is_always_lock_free);
-    std::array<Band, kBandCentersHz.size()> bands_;
+    static Coefficients makePeak(double sampleRate, double frequency, float gainDb) noexcept;
+    std::array<Band, kEqBandCount> bands_;
     double sampleRate_ = 0.0;
+    int32_t rampFrames_ = 1;
 };
 
 }  // namespace howl

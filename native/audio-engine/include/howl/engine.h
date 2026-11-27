@@ -62,6 +62,8 @@ public:
     Status previous();
     Status setPreampGainDb(float gainDb) noexcept;
     Status setEqBandGainDb(int32_t band, float gainDb) noexcept;
+    Status applyEqState(const EqState& state) noexcept;
+    void resetEqToFlat() noexcept;
     Status setRepeatMode(RepeatMode mode);
 
     int queueSize() const;
@@ -153,6 +155,10 @@ int32_t howl_engine_next(HowlEngineHandle* engine);
 int32_t howl_engine_previous(HowlEngineHandle* engine);
 int32_t howl_engine_set_preamp_gain_db(HowlEngineHandle* engine, float gain_db);
 int32_t howl_engine_set_eq_band_gain_db(HowlEngineHandle* engine, int32_t band, float gain_db);
+/* bands_db must contain ten floats ordered from 31.25 Hz to 16 kHz. */
+int32_t howl_engine_apply_eq_state(
+    HowlEngineHandle* engine, float preamp_db, const float* bands_db, int32_t band_count);
+int32_t howl_engine_reset_eq_to_flat(HowlEngineHandle* engine);
 int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode);
 int32_t howl_engine_queue_size(HowlEngineHandle* engine);
 int32_t howl_engine_current_index(HowlEngineHandle* engine);

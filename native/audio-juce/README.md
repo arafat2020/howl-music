@@ -21,7 +21,7 @@ Android defaults to OFF. Both builds use the same preamp and EQ processing path.
 
 - The file playback preamp defaults to 0 dB. It clamps finite inputs to −24 through +12 dB and rejects non-finite inputs.
 - Linear amplitude is 10 raised to dB / 20. For example, −6 dB is approximately 0.501×.
-- A 20 ms linear-amplitude ramp uses the same multiplier for every channel in a frame. Control updates publish the target with a lock-free atomic. The callback picks up the latest target at the start of each processed block.
+- A 20 ms linear-amplitude ramp uses the same multiplier for every channel in a frame. The callback picks up the preamp target as part of the latest complete EQ state at the start of each processed block.
 - The target is retained across track and stream changes within an engine instance.
 - Positive gain can clip peaks above full scale.
 
@@ -30,7 +30,9 @@ Android defaults to OFF. Both builds use the same preamp and EQ processing path.
 - File playback runs through the preamp, then ten octave-spaced peaking filters from 31.25 Hz through 16 kHz.
 - Each band clamps finite gains to −12 through +12 dB. At 0 dB the band passes the signal through unchanged.
 - Bands at or above half the stream sample rate are skipped. Filter histories are separate for each channel and reset when the graph is prepared again.
-- The callback reads per-band atomic targets and updates coefficients in place at block boundaries.
+- The callback reads the latest complete state from a preallocated three-slot handoff at block boundaries. Control writers serialize on their own mutex.
+- EQ filter coefficients interpolate over 20 ms. At flat, the wet contribution fades to zero and processing returns to exact unity.
+- Batch apply and flat reset use the same path as individual updates. Invalid batch values leave the previous state intact.
 
 ## License
 

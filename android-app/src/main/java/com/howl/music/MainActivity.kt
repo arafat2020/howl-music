@@ -108,6 +108,7 @@ class MainActivity : ComponentActivity() {
                 onPreampGainChanged = ::onPreampGainChanged,
                 eqBandGainsDb = eqBandGainsDb,
                 onEqBandGainChanged = ::onEqBandGainChanged,
+                onResetEq = ::onResetEq,
                 onToggleMode = ::onToggleMode,
                 onStart = ::onStartPlayback,
                 onStop = ::onStopPlayback,
@@ -172,6 +173,17 @@ class MainActivity : ComponentActivity() {
             eqBandGainsDb[band] = gainDb
         } else {
             status = "EQ=${eng.statusName(code)}"
+        }
+    }
+
+    private fun onResetEq() {
+        val eng = engine ?: return
+        val code = eng.resetEqToFlat()
+        if (code == 0) {
+            preampGainDb = 0
+            eqBandGainsDb.indices.forEach { eqBandGainsDb[it] = 0 }
+        } else {
+            status = "EQ reset=${eng.statusName(code)}"
         }
     }
 
@@ -301,6 +313,7 @@ private fun PlayerScreen(
     onPreampGainChanged: (Int) -> Unit,
     eqBandGainsDb: List<Int>,
     onEqBandGainChanged: (Int, Int) -> Unit,
+    onResetEq: () -> Unit,
     onToggleMode: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -455,6 +468,7 @@ private fun PlayerScreen(
                 steps = 35,
             )
             EqDebugControl(eqBandGainsDb, canControl, muted, onEqBandGainChanged)
+            Button(onClick = onResetEq, enabled = canControl) { Text("Reset to flat") }
             Text("Boost can clip.", color = muted, fontSize = 12.sp)
         }
         Text(

@@ -234,6 +234,14 @@ Status Engine::setEqBandGainDb(int32_t band, float gainDb) noexcept {
     return processGraph_.setEqBandGainDb(band, gainDb) ? Status::Ok : Status::InvalidArgument;
 }
 
+Status Engine::applyEqState(const EqState& state) noexcept {
+    return processGraph_.applyEqState(state) ? Status::Ok : Status::InvalidArgument;
+}
+
+void Engine::resetEqToFlat() noexcept {
+    processGraph_.resetEqToFlat();
+}
+
 Status Engine::setRepeatMode(RepeatMode mode) {
     std::lock_guard<std::mutex> lock(mutex_);
     queue_.setRepeatMode(mode);
@@ -923,6 +931,27 @@ int32_t howl_engine_set_eq_band_gain_db(HowlEngineHandle* engine, int32_t band, 
         return static_cast<int32_t>(howl::Status::NullHandle);
     }
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setEqBandGainDb(band, gain_db));
+}
+
+int32_t howl_engine_apply_eq_state(
+    HowlEngineHandle* engine, float preamp_db, const float* bands_db, int32_t band_count) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    if (bands_db == nullptr || band_count != static_cast<int32_t>(howl::kEqBandCount)) {
+        return static_cast<int32_t>(howl::Status::InvalidArgument);
+    }
+    howl::EqState state{preamp_db, {}};
+    std::copy_n(bands_db, band_count, state.bandsDb.begin());
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->applyEqState(state));
+}
+
+int32_t howl_engine_reset_eq_to_flat(HowlEngineHandle* engine) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    reinterpret_cast<howl::Engine*>(engine)->resetEqToFlat();
+    return static_cast<int32_t>(howl::Status::Ok);
 }
 
 int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode) {

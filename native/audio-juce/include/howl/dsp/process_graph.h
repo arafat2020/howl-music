@@ -1,5 +1,7 @@
 #pragma once
 
+#include "howl/dsp/eq_state.h"
+
 #include <cstdint>
 
 namespace howl {
@@ -34,6 +36,10 @@ public:
 
     /** Thread-safe update. Band order matches GraphicEq::kBandCentersHz. */
     bool setEqBandGainDb(int32_t band, float gainDb) noexcept;
+
+    /** Validate and publish all targets together. Invalid states leave all targets intact. */
+    bool applyEqState(const EqState& state) noexcept;
+    void resetEqToFlat() noexcept;
 
     void setBypassed(bool bypassed);
     bool isBypassed() const;

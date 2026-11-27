@@ -3,7 +3,7 @@
 **Milestone:** 3 — DSP graph  
 **Priority:** Foundational  
 **Depends on:** 3.3  
-**Status:** Not started
+**Status:** Implemented — pending physical-device listening check
 
 ## Objective
 
@@ -21,7 +21,9 @@ Engine.applyEqState(state)  // control thread
 Graph nodes ramp toward targets on audio thread
 ```
 
-Preset *names* stay in app storage later; engine stores active numeric state only.
+Each update publishes the preamp and all ten bands together. The audio callback takes the latest complete update at the start of a block and ramps over 20 ms. If another update arrives during the ramp, the next ramp starts at the current values.
+
+Preset names and storage belong to the app. The engine stores active numeric state only.
 
 ## Learning objectives
 
@@ -55,8 +57,8 @@ Preset *names* stay in app storage later; engine stores active numeric state onl
 ## Expected project structure
 
 ```text
-native/audio-engine/include/howl/eq_state.h
-audio-bridge/.../EqState.kt
+native/audio-juce/include/howl/dsp/eq_state.h
+audio-bridge/src/main/java/com/howl/music/bridge/EqState.kt
 ```
 
 ## Testing strategy
@@ -66,10 +68,10 @@ audio-bridge/.../EqState.kt
 
 ## Acceptance criteria
 
-- [ ] Batch apply works from bridge.
-- [ ] Flat reset works.
-- [ ] Click-free under normal preset-like changes.
-- [ ] Engine remains free of preset name/storage concerns.
+- [x] Batch apply works from the Kotlin bridge during emulator playback.
+- [x] Flat reset restores the preamp and all ten bands to 0 dB.
+- [ ] Confirm at a listening test that normal preset-like changes are click-free. Host waveform checks passed.
+- [x] Engine state contains numeric targets only.
 
 ## Review checklist
 
@@ -86,12 +88,12 @@ audio-bridge/.../EqState.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Complete EQ state apply and flat reset through native, C, JNI and Kotlin APIs. Both preamp and EQ changes ramp over 20 ms. The FLAC queue debug screen can reset to flat. |
+| Files created/modified | Shared native and Kotlin EQ state types, ProcessGraph, gain and EQ nodes, Engine and bridge code, debug screen, and native tests. |
+| Tests executed | Native host suites with and without JUCE, Android debug build and unit test, and an emulator smoke test that alternated a V-shaped update and flat reset during FLAC playback. |
+| Results | 62/62 tests passed in both host configurations. No C++ allocations were observed in the callback path during the rapid-update test. Android build, unit test, and emulator playback smoke test passed. |
+| Known limitations | A physical-device listening check for clicks is still pending. |
+| Decisions made | Preserve individual controls and publish complete snapshots through three preallocated slots. Serialized control writers publish the latest target. The callback consumes it without a mutex. Put the shared POD in the DSP module so the graph and engine use the same type. The ABI passes a preamp float and ten band floats explicitly. |
 | Next phase | 4.1 — Stable JNI / Kotlin engine API |
 
 **Approval required before Phase 4.1.**

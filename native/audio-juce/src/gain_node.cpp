@@ -6,18 +6,14 @@
 
 namespace howl {
 namespace {
-constexpr float kMinGainDb = -24.0f;
-constexpr float kMaxGainDb = 12.0f;
 constexpr double kRampSeconds = 0.020;
 }  // namespace
 
-bool GainNode::setTargetGainDb(float gainDb) noexcept {
-    if (!std::isfinite(gainDb)) {
-        return false;
+void GainNode::setTargetGainDb(float gainDb) noexcept {
+    if (targetDb_ != gainDb) {
+        targetDb_ = gainDb;
+        target_ = std::pow(10.0f, gainDb / 20.0f);
     }
-    const float clamped = std::clamp(gainDb, kMinGainDb, kMaxGainDb);
-    target_.store(std::pow(10.0f, clamped / 20.0f), std::memory_order_relaxed);
-    return true;
 }
 
 void GainNode::prepare(double sampleRate) noexcept {
@@ -28,12 +24,12 @@ void GainNode::prepare(double sampleRate) noexcept {
 }
 
 void GainNode::reset() noexcept {
-    current_ = destination_ = target_.load(std::memory_order_relaxed);
+    current_ = destination_ = target_;
     framesRemaining_ = 0;
 }
 
 void GainNode::process(float* samples, int32_t frames, int32_t channels) noexcept {
-    const float target = target_.load(std::memory_order_relaxed);
+    const float target = target_;
     if (target != destination_) {
         destination_ = target;
         framesRemaining_ = rampFrames_;

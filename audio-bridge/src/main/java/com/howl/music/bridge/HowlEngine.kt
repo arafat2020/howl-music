@@ -65,6 +65,13 @@ class HowlEngine private constructor(
     fun setEqBandGainDb(band: Int, gainDb: Float): Int =
         nativeSetEqBandGainDb(requireHandle(), band, gainDb)
 
+    /** Apply preamp and all ten EQ bands in one update. */
+    fun applyEqState(state: EqState): Int =
+        nativeApplyEqState(requireHandle(), state.preampDb, state.bandsDb)
+
+    /** Smoothly return the preamp and all EQ bands to 0 dB. */
+    fun resetEqToFlat(): Int = nativeResetEqToFlat(requireHandle())
+
     fun setRepeatMode(mode: RepeatMode): Int =
         nativeSetRepeatMode(requireHandle(), mode.nativeCode)
 
@@ -193,6 +200,12 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativePrevious(handle: Long): Int
         @JvmStatic private external fun nativeSetPreampGainDb(handle: Long, gainDb: Float): Int
         @JvmStatic private external fun nativeSetEqBandGainDb(handle: Long, band: Int, gainDb: Float): Int
+        @JvmStatic private external fun nativeApplyEqState(
+            handle: Long,
+            preampDb: Float,
+            bandsDb: FloatArray,
+        ): Int
+        @JvmStatic private external fun nativeResetEqToFlat(handle: Long): Int
         @JvmStatic private external fun nativeSetRepeatMode(handle: Long, mode: Int): Int
         @JvmStatic private external fun nativeQueueSize(handle: Long): Int
         @JvmStatic private external fun nativeCurrentIndex(handle: Long): Int

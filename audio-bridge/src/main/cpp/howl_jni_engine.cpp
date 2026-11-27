@@ -161,6 +161,34 @@ Java_com_howl_music_bridge_HowlEngine_nativeSetEqBandGainDb(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeApplyEqState(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jlong handle,
+    jfloat preampDb,
+    jfloatArray bandsDb) {
+    constexpr jsize kBandCount = static_cast<jsize>(howl::kEqBandCount);
+    if (bandsDb == nullptr || env->GetArrayLength(bandsDb) != kBandCount) {
+        return static_cast<jint>(howl::Status::InvalidArgument);
+    }
+    jfloat gains[kBandCount];
+    env->GetFloatArrayRegion(bandsDb, 0, kBandCount, gains);
+    if (env->ExceptionCheck()) {
+        return static_cast<jint>(howl::Status::InvalidArgument);
+    }
+    return howl_engine_apply_eq_state(
+        reinterpret_cast<HowlEngineHandle*>(handle), preampDb, gains, kBandCount);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeResetEqToFlat(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jlong handle) {
+    return howl_engine_reset_eq_to_flat(reinterpret_cast<HowlEngineHandle*>(handle));
+}
+
+JNIEXPORT jint JNICALL
 Java_com_howl_music_bridge_HowlEngine_nativeSetRepeatMode(
     JNIEnv* /* env */,
     jobject /* thiz */,
