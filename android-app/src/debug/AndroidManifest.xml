@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name=".ui.debug.ArtworkPreviewActivity" android:exported="false" />
         <activity android:name=".ui.debug.ScanActivity" android:exported="false" />
         <activity android:name=".EngineDebugActivity" android:exported="false" />
     </application>

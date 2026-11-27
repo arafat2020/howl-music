@@ -19,6 +19,7 @@ import androidx.media3.session.SessionToken
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
 import com.howl.music.data.db.verifyRoomSchema
+import com.howl.music.data.artwork.verifyArtwork
 import com.howl.music.data.readUserData
 import com.howl.music.data.writeUserData
 import com.howl.music.data.scan.verifyLibraryScan
@@ -51,6 +52,7 @@ class EngineApiInstrumentation : Instrumentation() {
                     "write" -> writeUserData(targetContext, context)
                     "read" -> readUserData(targetContext, fixture)
                     null -> {
+                        verifyArtwork(targetContext, context, fixture)
                         verifyRoomSchema(targetContext)
                         verifyLibraryScan(targetContext)
                         writeUserData(targetContext, context)
@@ -66,7 +68,7 @@ class EngineApiInstrumentation : Instrumentation() {
                 fixture.delete()
             }
             val summary = persistenceStep?.let { "User data persistence step $it passed." }
-                ?: "Howl engine, playback, audio focus, schema, scan, and user data checks passed."
+                ?: "Howl engine, playback, audio focus, schema, scan, user data, and artwork checks passed."
             result.putString("stream", "\n$summary\n")
             Activity.RESULT_OK
         } catch (error: Throwable) {

@@ -24,6 +24,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.howl.music.media.HowlPlaybackService
+import com.howl.music.ui.debug.ArtworkPreviewActivity
 import com.howl.music.ui.debug.ScanActivity
 import kotlinx.coroutines.delay
 
@@ -79,6 +80,9 @@ class MainActivity : ComponentActivity() {
                 if (BuildConfig.DEBUG) {
                     Button(onClick = { startActivity(Intent(this@MainActivity, ScanActivity::class.java)) }) {
                         Text("Scan music")
+                    }
+                    Button(onClick = { startActivity(Intent(this@MainActivity, ArtworkPreviewActivity::class.java)) }) {
+                        Text("Artwork preview")
                     }
                     Button(
                         onClick = ::openDiagnostics,

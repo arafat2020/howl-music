@@ -11,8 +11,10 @@ oboe = "1.9.3"
 media3 = "1.6.1"
 room = "2.7.2"
 ksp = "2.0.21-1.0.28"
+coil = "2.7.0"
 
 [libraries]
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
