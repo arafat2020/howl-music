@@ -2,6 +2,8 @@ package com.howl.music
 
 import android.app.Activity
 import android.app.Instrumentation
+import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -9,12 +11,16 @@ import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
 import com.howl.music.media.HowlMedia3Player
+import com.howl.music.media.HowlPlaybackService
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 
 /** Exercises the production bridge and native library on an Android control thread. */
 class EngineApiInstrumentation : Instrumentation() {
@@ -34,10 +40,11 @@ class EngineApiInstrumentation : Instrumentation() {
                 verifyLifecycle(fixture)
                 verifyCloseAndRestart(fixture)
                 verifyMedia3(fixture)
+                verifyServicePlayback()
             } finally {
                 fixture.delete()
             }
-            result.putString("stream", "\nHowl engine API and Media3 playback passed.\n")
+            result.putString("stream", "\nHowl engine API, Media3 playback, and service reconnect passed.\n")
             Activity.RESULT_OK
         } catch (error: Throwable) {
             result.putString("stream", "\n" + Log.getStackTraceString(error))
@@ -168,6 +175,58 @@ class EngineApiInstrumentation : Instrumentation() {
             }
         } finally {
             fixture.delete()
+        }
+    }
+
+    @UnstableApi
+    private fun verifyServicePlayback() {
+        val activity = startActivitySync(
+            Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        val token = SessionToken(targetContext, ComponentName(targetContext, HowlPlaybackService::class.java))
+        fun connect(): MediaController =
+            onMain { MediaController.Builder(targetContext, token).buildAsync() }.get(5, TimeUnit.SECONDS)
+
+        try {
+            val first = connect()
+            try {
+                onMain {
+                    first.setMediaItem(MediaItem.Builder().setMediaId(HowlPlaybackService.SAMPLE_MEDIA_ID).build())
+                }
+                waitFor("service resolving local media") {
+                    onMain {
+                        first.isCommandAvailable(Player.COMMAND_PREPARE) &&
+                            first.mediaMetadata.title?.toString() == "Howl test tone"
+                    }
+                }
+                onMain {
+                    first.repeatMode = Player.REPEAT_MODE_ONE
+                    first.prepare()
+                    first.play()
+                }
+                waitFor("service playback") { onMain { first.isPlaying } }
+            } finally {
+                onMain { first.release() }
+            }
+
+            onMain { activity.finish() }
+            waitFor("Activity destruction") { onMain { activity.isDestroyed } }
+            SystemClock.sleep(600) // The fixture is 500 ms, so playback must survive a repeat.
+            val second = connect()
+            try {
+                onMain {
+                    check(second.currentMediaItem?.mediaId == HowlPlaybackService.SAMPLE_MEDIA_ID)
+                    check(second.isPlaying && second.repeatMode == Player.REPEAT_MODE_ONE)
+                    second.pause()
+                }
+                waitFor("service paused") { onMain { !second.playWhenReady } }
+                onMain { second.setMediaItem(MediaItem.EMPTY) }
+                waitFor("service cleared media") { onMain { second.mediaItemCount == 0 } }
+            } finally {
+                onMain { second.release() }
+            }
+        } finally {
+            onMain { if (!activity.isDestroyed) activity.finish() }
         }
     }
 

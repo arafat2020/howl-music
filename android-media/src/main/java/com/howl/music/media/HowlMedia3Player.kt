@@ -27,15 +27,22 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
     private var itemUid: Any = Any()
     private var playbackState = Player.STATE_IDLE
     private var playWhenReady = false
+    private var repeatMode = Player.REPEAT_MODE_OFF
     private var started = false
     private var error: PlaybackException? = null
     private var durationMs = C.TIME_UNSET
     private var positionMs = 0L
+    private var repeatDiscontinuity = false
     private val position = PositionSupplier { positionMs }
 
     private val poll = object : Runnable {
         override fun run() {
-            command { refreshPosition() }
+            command {
+                val previous = positionMs
+                refreshPosition()
+                repeatDiscontinuity = started && repeatMode != Player.REPEAT_MODE_OFF &&
+                    positionMs < previous
+            }
             invalidateState()
         }
     }
@@ -45,7 +52,7 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
         val commands = Player.Commands.Builder()
             .addAll(Player.COMMAND_RELEASE, Player.COMMAND_SET_MEDIA_ITEM,
                 Player.COMMAND_GET_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_TIMELINE,
-                Player.COMMAND_GET_METADATA)
+                Player.COMMAND_GET_METADATA, Player.COMMAND_SET_REPEAT_MODE)
             .apply {
                 if (current != null) {
                     addAll(Player.COMMAND_PREPARE, Player.COMMAND_PLAY_PAUSE, Player.COMMAND_STOP)
@@ -68,10 +75,17 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
             .setAvailableCommands(commands)
             .setPlaylist(playlist)
             .setPlaybackState(playbackState)
+            .setRepeatMode(repeatMode)
             .setPlayWhenReady(playWhenReady, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
             .setPlayerError(error)
             .setContentPositionMs(position)
             .setContentBufferedPositionMs(position)
+            .apply {
+                if (repeatDiscontinuity) {
+                    repeatDiscontinuity = false
+                    setPositionDiscontinuity(Player.DISCONTINUITY_REASON_AUTO_TRANSITION, positionMs)
+                }
+            }
             .build()
     }
 
@@ -82,13 +96,17 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
     ): ListenableFuture<*> = command {
         val wasPrepared = playbackState != Player.STATE_IDLE
         stopStream()
-        item = mediaItems.single()
+        item = mediaItems.single().takeUnless { it == MediaItem.EMPTY }
         itemUid = Any()
         durationMs = C.TIME_UNSET
         positionMs = startPositionMs.coerceAtLeast(0)
         playbackState = Player.STATE_IDLE
         error = null
-        if (wasPrepared) prepareItem()
+        if (item == null) {
+            playWhenReady = false
+        } else if (wasPrepared) {
+            prepareItem()
+        }
     }
 
     override fun handlePrepare(): ListenableFuture<*> = command {
@@ -131,6 +149,17 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
                 }
             }
         }
+    }
+
+    override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> = command {
+        checkStatus(
+            engine.setRepeatMode(
+                if (repeatMode == Player.REPEAT_MODE_OFF) HowlEngine.RepeatMode.None
+                else HowlEngine.RepeatMode.One,
+            ),
+            "Set repeat",
+        )
+        this.repeatMode = repeatMode
     }
 
     override fun handleStop(): ListenableFuture<*> = command {

@@ -3,7 +3,7 @@
 **Milestone:** 4 — Android integration  
 **Priority:** Foundational  
 **Depends on:** 4.2  
-**Status:** Not started
+**Status:** Implemented and verified on the Android emulator
 
 ## Objective
 
@@ -66,10 +66,23 @@ android-app/.../PlayerController.kt
 
 ## Acceptance criteria
 
-- [ ] Background playback works with visible media notification.
-- [ ] Notification transport controls work.
-- [ ] Activity destroy does not necessarily stop engine (policy documented).
-- [ ] Target-SDK service requirements satisfied.
+- [x] Background playback continues with a visible media notification.
+- [x] Play and pause work from Android’s media card.
+- [x] Destroying the Activity releases the controller while active playback continues.
+- [x] The service declares the media playback type and both foreground service permissions at target SDK 35.
+
+## Service lifetime
+
+| Action | Behavior |
+|---|---|
+| Tap Play in Howl | The Activity sends commands through its MediaController. The service resolves the bundled WAV, starts the native player, and lets Media3 post its media notification. |
+| Press Home, turn off the screen, or destroy the Activity | Active playback continues. The Activity releases only its controller when stopped. Reopening Howl reconnects to the session without replacing the item. |
+| Use the notification | Android routes Play and Pause to the same Player. Tapping the media card opens Howl. |
+| Remove Howl from Recents | Media3 keeps active foreground playback running. When paused, stopped, or ended, its default task-removal handling stops the service if no controllers remain bound. |
+| Open Engine diagnostics in a debug build | The controller clears the session item before opening the separate diagnostic screen. The native diagnostic playback stops when that screen is left. |
+| Destroy the service | The service releases the MediaSession and the single player, which closes the native engine. |
+
+Howl starts playback from the visible UI and uses Media3’s default foreground and notification handling. The manifest declares `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, and the `mediaPlayback` service type. The service is exported for media controls. Howl’s own controller can select the bundled item. Other trusted controllers get transport commands only. [Android MediaSessionService guide](https://developer.android.com/media/media3/session/background-playback)
 
 ## Review checklist
 
@@ -86,12 +99,12 @@ android-app/.../PlayerController.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | One HowlPlaybackService and MediaSession, an Activity-scoped MediaController connection, and the standard Media3 transport notification. |
+| Files created/modified | Media service and manifest, controller and launcher, diagnostic Activity, repeat handling, Gradle catalog, and Android instrumentation. |
+| Tests executed | Android debug APK build and unit test, Android instrumentation, and API 36 arm64 emulator service and notification checks. |
+| Results | Verified foreground notification, Home and screen-off playback, notification pause and resume, playback continuing after active task removal, service shutdown after paused task removal, and controller reconnect after Activity destruction. |
+| Known limitations | The launcher currently plays the bundled WAV on repeat. Library browsing, persistent queue restoration, audio focus, and headset behavior are later phases. |
+| Decisions made | Service owns playback and uses the default Media3 task-removal policy. Keep engine diagnostics in the debug build and clear session media before entering them. |
 | Next phase | 4.4 — Audio focus, headset, interruptions |
 
 **Approval required before Phase 4.4.**
