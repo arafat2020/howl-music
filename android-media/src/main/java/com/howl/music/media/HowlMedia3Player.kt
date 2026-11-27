@@ -1,6 +1,7 @@
 package com.howl.music.media
 
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
@@ -18,7 +19,11 @@ import com.howl.music.bridge.HowlEngine
  * Create, command, and release it on [looper]. Commands run synchronously on that thread.
  */
 @UnstableApi
-class HowlMedia3Player internal constructor(looper: Looper, context: Context?) : SimpleBasePlayer(looper) {
+class HowlMedia3Player internal constructor(
+    looper: Looper,
+    context: Context?,
+    private val onDiscardSource: (Uri) -> Unit = {},
+) : SimpleBasePlayer(looper) {
     constructor(looper: Looper) : this(looper, null)
 
     private val engine = run {
@@ -108,6 +113,7 @@ class HowlMedia3Player internal constructor(looper: Looper, context: Context?) :
     ): ListenableFuture<*> = command {
         val wasPrepared = playbackState != Player.STATE_IDLE
         stopStream()
+        discardSource()
         item = mediaItems.single().takeUnless { it == MediaItem.EMPTY }
         itemUid = Any()
         durationMs = C.TIME_UNSET
@@ -186,6 +192,7 @@ class HowlMedia3Player internal constructor(looper: Looper, context: Context?) :
         try {
             engine.close()
         } finally {
+            discardSource()
             audioFocus?.release()
         }
         started = false
@@ -205,6 +212,10 @@ class HowlMedia3Player internal constructor(looper: Looper, context: Context?) :
         playbackState = Player.STATE_READY
         error = null
         if (playWhenReady) startOrResumeStream()
+    }
+
+    private fun discardSource() {
+        item?.localConfiguration?.uri?.let(onDiscardSource)
     }
 
     private fun startOrResumeStream() {

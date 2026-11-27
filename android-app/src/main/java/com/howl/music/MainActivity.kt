@@ -1,14 +1,17 @@
 package com.howl.music
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import com.howl.music.data.db.LibraryRow
 import com.howl.music.media.HowlPlaybackService
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.debug.ArtworkPreviewActivity
@@ -23,7 +26,7 @@ class MainActivity : ComponentActivity() {
     private var connection: PlayerController? = null
     private val player = mutableStateOf<MediaController?>(null)
     private val playback = mutableStateOf(PlaybackUiState())
-    private val pendingPlay = mutableStateOf(false)
+    private var pendingMediaId: String? = null
     private val pendingDiagnostics = mutableStateOf(false)
 
     private val listener = object : Player.Listener {
@@ -40,6 +43,8 @@ class MainActivity : ComponentActivity() {
                 HowlNavHost(
                     playback = playback.value,
                     onToggle = ::togglePlayback,
+                    onPlayTrack = ::playTrack,
+                    onScan = { startActivity(Intent(this, ScanActivity::class.java)) },
                     onStop = { player.value?.stop() },
                     onSeekStart = { player.value?.seekTo(0) },
                     readPositionMs = { player.value?.currentPosition ?: 0L },
@@ -70,7 +75,7 @@ class MainActivity : ComponentActivity() {
         player.value?.removeListener(listener)
         player.value = null
         playback.value = playback.value.copy(canToggle = false, canSeek = false)
-        pendingPlay.value = false
+        pendingMediaId = null
         pendingDiagnostics.value = false
         connection?.close()
         connection = null
@@ -85,7 +90,7 @@ class MainActivity : ComponentActivity() {
 
     private fun onPlaybackUnavailable(message: String) {
         player.value = null
-        pendingPlay.value = false
+        pendingMediaId = null
         pendingDiagnostics.value = false
         playback.value = PlaybackUiState(status = message)
     }
@@ -97,16 +102,36 @@ class MainActivity : ComponentActivity() {
         ) {
             controller.pause()
         } else if (controller.currentMediaItem == null) {
-            pendingPlay.value = true
-            updatePlayer(controller)
-            controller.setMediaItem(MediaItem.Builder().setMediaId(HowlPlaybackService.SAMPLE_MEDIA_ID).build())
+            selectMedia(controller, MediaItem.Builder().setMediaId(HowlPlaybackService.SAMPLE_MEDIA_ID).build())
         } else {
             startPlayback(controller)
         }
     }
 
+    private fun playTrack(track: LibraryRow) {
+        val controller = player.value ?: return
+        val uri = track.uri ?: return
+        val item = MediaItem.Builder()
+            .setMediaId(uri)
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(uri)).build())
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).build())
+            .build()
+        selectMedia(controller, item)
+    }
+
+    private fun selectMedia(controller: MediaController, item: MediaItem) {
+        if (!controller.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM)) return
+        pendingMediaId = item.mediaId
+        updatePlayer(controller)
+        controller.setMediaItem(item)
+    }
+
     private fun startPlayback(player: Player) {
-        player.repeatMode = Player.REPEAT_MODE_ONE
+        player.repeatMode = if (player.currentMediaItem?.mediaId == HowlPlaybackService.SAMPLE_MEDIA_ID) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
         if (player.playbackState == Player.STATE_IDLE) player.prepare()
         player.play()
     }
@@ -123,10 +148,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun completePendingAction(player: Player) {
-        if (pendingPlay.value && player.isCommandAvailable(Player.COMMAND_PREPARE) &&
-            player.currentMediaItem?.mediaId == HowlPlaybackService.SAMPLE_MEDIA_ID
+        if (pendingMediaId != null && player.isCommandAvailable(Player.COMMAND_PREPARE) &&
+            player.currentMediaItem?.mediaId == pendingMediaId
         ) {
-            pendingPlay.value = false
+            pendingMediaId = null
             startPlayback(player)
         }
         if (pendingDiagnostics.value && player.currentMediaItem == null) {
@@ -137,12 +162,12 @@ class MainActivity : ComponentActivity() {
 
     private fun updatePlayer(player: Player) {
         val item = player.currentMediaItem
-        val readyForCommands = !pendingPlay.value && !pendingDiagnostics.value
+        val readyForCommands = pendingMediaId == null && !pendingDiagnostics.value
         playback.value = PlaybackUiState(
             title = item?.let { player.mediaMetadata.title?.toString() ?: it.mediaId },
-            artworkTrackUri = item?.localConfiguration?.uri?.toString(),
+            artworkTrackUri = (item?.requestMetadata?.mediaUri ?: item?.localConfiguration?.uri)?.toString(),
             status = player.playerError?.message ?: when {
-                pendingPlay.value -> "Loading track"
+                pendingMediaId != null -> "Loading track"
                 player.playbackState == Player.STATE_READY -> if (player.isPlaying) "Playing" else "Paused"
                 player.playbackState == Player.STATE_ENDED -> "Ended"
                 else -> "Idle"

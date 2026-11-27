@@ -32,6 +32,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.howl.music.ui.components.AlbumArt
 import com.howl.music.ui.components.HowlButton
+import com.howl.music.data.db.LibraryRow
+import com.howl.music.ui.library.LibraryScreen
 import com.howl.music.ui.player.MiniPlayer
 import com.howl.music.ui.player.PlaybackUiState
 import com.howl.music.ui.theme.HowlSpacing
@@ -49,6 +51,8 @@ private const val NOW_PLAYING = "now-playing"
 internal fun HowlNavHost(
     playback: PlaybackUiState,
     onToggle: () -> Unit,
+    onPlayTrack: (LibraryRow) -> Unit,
+    onScan: () -> Unit,
     onStop: () -> Unit,
     onSeekStart: () -> Unit,
     readPositionMs: () -> Long,
@@ -88,7 +92,7 @@ internal fun HowlNavHost(
             exitTransition = { ExitTransition.None },
         ) {
             composable(Tab.Library.route) {
-                Destination("Library") { Text("Your music will appear here.") }
+                LibraryScreen(onPlay = onPlayTrack, onScan = onScan)
             }
             composable(Tab.Equalizer.route) {
                 Destination("Equalizer") { Text("Equalizer controls are coming here.") }

@@ -41,6 +41,7 @@ abstract class HowlDatabase : RoomDatabase() {
         /** The caller owns this instance and should share it across library consumers. */
         fun open(context: Context): HowlDatabase =
             Room.databaseBuilder(context.applicationContext, HowlDatabase::class.java, "howl-library.db")
+                .enableMultiInstanceInvalidation()
                 .build()
     }
 }

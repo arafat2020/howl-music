@@ -6,6 +6,7 @@ import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.db.entities.PlaylistEntity
 import com.howl.music.data.db.entities.PlaylistTrackEntity
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.take
@@ -32,6 +33,16 @@ internal fun verifyLibraryScan(context: Context) = runBlocking {
         val complete = repo.scan(flow { repeat(count) { emit(track(it)) } }).last()
         check(complete == ScanProgress.Complete(count, count))
         android.util.Log.i("HowlScanTest", "Indexed $count synthetic tracks in ${(System.nanoTime() - start) / 1_000_000} ms")
+
+        val firstPage = dao.browseTracks("", false, -1, -1, 101).first()
+        check(firstPage.size == 101)
+        check(dao.browseTracks("tRaCk 2500", false, -1, -1, 10).first().single().uri == track(2499).uri)
+        check(dao.browseTracks("%", false, -1, -1, 10).first().isEmpty())
+        check(dao.browseTracks("", true, -1, -1, 1).first().single().title == "Track 999")
+        val album = dao.browseAlbums("test album", false, 100).first().single()
+        val artist = dao.browseArtists("test artist", false, 100).first().single()
+        check(album.uri != null && artist.uri != null)
+        check(dao.browseTracks("", false, album.id, artist.id, 10).first().size == 10)
 
         val first = checkNotNull(dao.trackByUri(track(0).uri))
         check(first.artistId != null && first.albumId != null)

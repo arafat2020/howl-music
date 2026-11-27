@@ -325,7 +325,7 @@ Status Engine::start() {
 
         output->setOutputMode(OutputMode::Ring, ring.get());
         output->setPositionFrames(&positionFrames_);
-        const Status outSt = output->start();
+        const Status outSt = output->start(fileSampleRate_);
         if (outSt != Status::Ok) {
             std::lock_guard<std::mutex> lock(mutex_);
             state_ = EngineState::Idle;
@@ -710,7 +710,7 @@ Status Engine::changeTrack(const std::string& path) {
             output_ = std::make_unique<AudioOutput>();
             output_->setOutputMode(OutputMode::Ring, ring_.get());
             output_->setPositionFrames(&positionFrames_);
-            const Status outSt = output_->start();
+            const Status outSt = output_->start(fmt.sampleRate);
             if (outSt != Status::Ok) {
                 trackChanging_.store(false, std::memory_order_release);
                 state_ = EngineState::Idle;

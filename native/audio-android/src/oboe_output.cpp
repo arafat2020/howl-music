@@ -127,7 +127,7 @@ bool AudioOutput::isPaused() const {
     return impl_->paused.load(std::memory_order_acquire);
 }
 
-Status AudioOutput::start() {
+Status AudioOutput::start(int32_t requestedSampleRate) {
     if (impl_->stream && impl_->stream->getState() == oboe::StreamState::Started) {
         return Status::AlreadyRunning;
     }
@@ -155,6 +155,10 @@ Status AudioOutput::start() {
         ->setDataCallback(impl_.get())
         ->setErrorCallback(impl_.get());
 
+    if (requestedSampleRate > 0) {
+        builder.setSampleRate(requestedSampleRate)
+            ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium);
+    }
     oboe::Result result = builder.openStream(impl_->stream);
     if (result != oboe::Result::OK) {
         builder.setPerformanceMode(oboe::PerformanceMode::None);

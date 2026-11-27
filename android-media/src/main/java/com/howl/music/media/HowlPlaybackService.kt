@@ -11,17 +11,30 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import java.io.File
+import java.util.UUID
+import java.util.concurrent.Executors
 
 /** Owns the one session, player, and native playback engine for the app. */
 @UnstableApi
 class HowlPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private val sourceExecutor = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+    @Volatile private var destroying = false
+    private val stagedSources by lazy { File(cacheDir, "playback-sources-${UUID.randomUUID()}") }
+
+    private fun discardSource(uri: Uri) {
+        val file = uri.path?.let(::File) ?: return
+        if (file.parentFile == stagedSources) {
+            sourceExecutor.execute { file.delete() }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         val player = try {
-            HowlMedia3Player(mainLooper, this)
+            HowlMedia3Player(mainLooper, this, ::discardSource)
         } catch (failure: RuntimeException) {
             Log.e(TAG, "Could not create the playback engine", failure)
             stopSelf()
@@ -47,6 +60,7 @@ class HowlPlaybackService : MediaSessionService() {
         session.takeIf { controllerInfo.uid == applicationInfo.uid || controllerInfo.isTrusted }
 
     override fun onDestroy() {
+        destroying = true
         val ownedSession = session
         session = null
         try {
@@ -59,6 +73,8 @@ class HowlPlaybackService : MediaSessionService() {
                 }
             }
         } finally {
+            sourceExecutor.execute { stagedSources.deleteRecursively() }
+            sourceExecutor.shutdown()
             super.onDestroy()
         }
     }
@@ -92,14 +108,48 @@ class HowlPlaybackService : MediaSessionService() {
         ): ListenableFuture<List<MediaItem>> = try {
             check(controller.uid == applicationInfo.uid) { "Only Howl can select media" }
             val requested = mediaItems.single()
-            val item = when {
-                requested == MediaItem.EMPTY -> MediaItem.EMPTY
-                requested.mediaId == SAMPLE_MEDIA_ID -> loadSample()
-                else -> throw IllegalArgumentException("Unknown Howl media ID")
+            when {
+                requested == MediaItem.EMPTY -> Futures.immediateFuture(listOf(MediaItem.EMPTY))
+                requested.mediaId == SAMPLE_MEDIA_ID -> Futures.immediateFuture(listOf(loadSample()))
+                else -> {
+                    val uri = requested.requestMetadata.mediaUri
+                    val parts = uri?.pathSegments.orEmpty()
+                    require(uri?.scheme == "content" && uri.authority == "media" &&
+                        parts.size == 4 && parts[1] == "audio" && parts[2] == "media" &&
+                        parts[3].toLongOrNull()?.let { it > 0 } == true
+                    ) { "Expected an indexed MediaStore audio item" }
+                    sourceExecutor.submit<List<MediaItem>> { listOf(stageTrack(requested, uri)) }
+                }
             }
-            Futures.immediateFuture(listOf(item))
         } catch (failure: Exception) {
             Futures.immediateFailedFuture(failure)
+        }
+    }
+
+    private fun stageTrack(item: MediaItem, uri: Uri): MediaItem {
+        // Native decoders reopen a seekable filesystem path. MediaStore descriptors may
+        // be readable only through the provider and cannot always be reopened via procfs.
+        var file: File? = null
+        try {
+            stagedSources.mkdirs()
+            file = File.createTempFile("track-", ".audio", stagedSources)
+            checkNotNull(contentResolver.openInputStream(uri)).use { input ->
+                file.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (!destroying && !Thread.currentThread().isInterrupted) {
+                        val size = input.read(buffer)
+                        if (size < 0) break
+                        output.write(buffer, 0, size)
+                    }
+                    check(!destroying && !Thread.currentThread().isInterrupted) { "Source staging cancelled" }
+                }
+            }
+            return item.buildUpon().setUri(Uri.fromFile(file)).build()
+        } catch (failure: Exception) {
+            file?.delete()
+            Log.w(TAG, "Could not stage the selected track", failure)
+            // Leave the local URI unresolved so prepare reports a playback error.
+            return item.buildUpon().setUri(uri).build()
         }
     }
 

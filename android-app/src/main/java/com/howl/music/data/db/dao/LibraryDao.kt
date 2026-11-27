@@ -8,9 +8,47 @@ import androidx.room.Upsert
 import com.howl.music.data.db.entities.AlbumEntity
 import com.howl.music.data.db.entities.ArtistEntity
 import com.howl.music.data.db.entities.TrackEntity
+import com.howl.music.data.db.LibraryRow
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LibraryDao {
+    @Query("""
+        SELECT t.id, t.title, t.uri, a.name AS artist, b.title AS album
+        FROM tracks t LEFT JOIN artists a ON a.id = t.artistId
+        LEFT JOIN albums b ON b.id = t.albumId
+        WHERE (:albumId = -1 OR t.albumId = :albumId) AND (:artistId = -1 OR t.artistId = :artistId)
+        AND (instr(lower(t.title), lower(:query)) > 0 OR
+             instr(lower(COALESCE(a.name, '')), lower(:query)) > 0 OR
+             instr(lower(COALESCE(b.title, '')), lower(:query)) > 0)
+        ORDER BY CASE WHEN NOT :descending THEN t.title END COLLATE NOCASE ASC,
+                 CASE WHEN :descending THEN t.title END COLLATE NOCASE DESC, t.id
+        LIMIT :limit
+    """)
+    fun browseTracks(query: String, descending: Boolean, albumId: Long, artistId: Long, limit: Int): Flow<List<LibraryRow>>
+
+    @Query("""
+        SELECT b.id, b.title, (SELECT t.uri FROM tracks t WHERE t.albumId = b.id ORDER BY t.id LIMIT 1) AS uri,
+               a.name AS artist, NULL AS album
+        FROM albums b LEFT JOIN artists a ON a.id = b.artistId
+        WHERE instr(lower(b.title), lower(:query)) > 0
+        ORDER BY CASE WHEN NOT :descending THEN b.title END COLLATE NOCASE ASC,
+                 CASE WHEN :descending THEN b.title END COLLATE NOCASE DESC, b.id
+        LIMIT :limit
+    """)
+    fun browseAlbums(query: String, descending: Boolean, limit: Int): Flow<List<LibraryRow>>
+
+    @Query("""
+        SELECT a.id, a.name AS title, (SELECT t.uri FROM tracks t WHERE t.artistId = a.id ORDER BY t.id LIMIT 1) AS uri,
+               NULL AS artist, NULL AS album
+        FROM artists a
+        WHERE instr(lower(a.name), lower(:query)) > 0
+        ORDER BY CASE WHEN NOT :descending THEN a.name END COLLATE NOCASE ASC,
+                 CASE WHEN :descending THEN a.name END COLLATE NOCASE DESC, a.id
+        LIMIT :limit
+    """)
+    fun browseArtists(query: String, descending: Boolean, limit: Int): Flow<List<LibraryRow>>
+
     @Insert suspend fun insertArtist(artist: ArtistEntity): Long
 
     @Insert suspend fun insertAlbum(album: AlbumEntity): Long

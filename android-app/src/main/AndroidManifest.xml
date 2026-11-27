@@ -11,6 +11,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.HowlMusic">
+        <activity android:name=".ui.debug.ScanActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

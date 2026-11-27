@@ -47,7 +47,7 @@ public:
     void setPaused(bool paused);
     bool isPaused() const;
 
-    Status start();
+    Status start(int32_t requestedSampleRate = 0);
     Status stop();
 
     bool isRunning() const;

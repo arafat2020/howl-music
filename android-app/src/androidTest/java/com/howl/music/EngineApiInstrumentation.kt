@@ -3,15 +3,19 @@ package com.howl.music
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.ComponentName
+import android.content.ContentValues
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -60,7 +64,7 @@ class EngineApiInstrumentation : Instrumentation() {
                         verifyLifecycle(fixture)
                         verifyCloseAndRestart(fixture)
                         verifyMedia3(fixture)
-                        verifyServicePlayback()
+                        verifyServicePlayback(fixture)
                     }
                     else -> error("Unknown persistence test step")
                 }
@@ -204,7 +208,7 @@ class EngineApiInstrumentation : Instrumentation() {
     }
 
     @UnstableApi
-    private fun verifyServicePlayback() {
+    private fun verifyServicePlayback(fixture: File) {
         val activity = startActivitySync(
             Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
@@ -248,11 +252,66 @@ class EngineApiInstrumentation : Instrumentation() {
                 waitFor("service paused") { onMain { !second.playWhenReady } }
                 onMain { second.setMediaItem(MediaItem.EMPTY) }
                 waitFor("service cleared media") { onMain { second.mediaItemCount == 0 } }
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val visible = startActivitySync(
+                        Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                    try {
+                        verifyLibraryPlayback(second, fixture)
+                    } finally {
+                        onMain { visible.finish() }
+                    }
+                }
             } finally {
                 onMain { second.release() }
             }
         } finally {
             onMain { if (!activity.isDestroyed) activity.finish() }
+        }
+    }
+
+    @androidx.annotation.RequiresApi(29)
+    private fun verifyLibraryPlayback(controller: MediaController, fixture: File) {
+        val resolver = targetContext.contentResolver
+        val uri = checkNotNull(resolver.insert(
+            MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
+            ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "howl-library-${System.nanoTime()}.wav")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Music/HowlLibraryTest/")
+                put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            },
+        ))
+        try {
+            val wav = fixture.readBytes()
+            ByteBuffer.wrap(wav).order(ByteOrder.LITTLE_ENDIAN).putInt(24, 44_100).putInt(28, 176_400)
+            checkNotNull(resolver.openOutputStream(uri)).use { it.write(wav) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            val item = MediaItem.Builder()
+                .setMediaId(uri.toString())
+                .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
+                .setMediaMetadata(MediaMetadata.Builder().setTitle("Indexed WAV").build())
+                .build()
+            onMain { controller.setMediaItem(item) }
+            waitFor("library item resolved") {
+                onMain {
+                    controller.currentMediaItem?.mediaId == item.mediaId &&
+                        controller.isCommandAvailable(Player.COMMAND_PREPARE)
+                }
+            }
+            onMain {
+                controller.repeatMode = Player.REPEAT_MODE_ONE
+                controller.prepare()
+                controller.play()
+            }
+            waitFor("44.1 kHz library item playback") { onMain { controller.isPlaying } }
+            onMain {
+                check(controller.mediaMetadata.title?.toString() == "Indexed WAV")
+                controller.setMediaItem(MediaItem.EMPTY)
+            }
+            waitFor("library source released") { onMain { controller.mediaItemCount == 0 } }
+        } finally {
+            resolver.delete(uri, null, null)
         }
     }
 
