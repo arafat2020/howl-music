@@ -1,5 +1,7 @@
 #pragma once
 
+#include "howl/engine_api.h"
+
 #include <cstdint>
 
 namespace howl {
@@ -33,19 +35,3 @@ inline int64_t msToFrames(int64_t ms, int32_t sampleRate) {
 }
 
 }  // namespace howl
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef struct HowlTransportSnapshot {
-    int64_t position_frames;
-    int64_t duration_frames;
-    int32_t sample_rate;
-    int32_t paused;   // 0/1
-    int32_t playing;  // 0/1
-} HowlTransportSnapshot;
-
-#ifdef __cplusplus
-}
-#endif

@@ -3,7 +3,7 @@
 **Milestone:** 4 — Android integration  
 **Priority:** Foundational  
 **Depends on:** 2.3, 1.3 (3.4 recommended if EQ exposed)  
-**Status:** Not started
+**Status:** Implemented and verified
 
 ## Objective
 
@@ -17,7 +17,7 @@ This is the contract boundary. If it’s chatty or leaky, Media3 and Compose wil
 
 ```text
 HowlEngine (Kotlin)
-  suspend/control APIs on binder/main as appropriate
+  synchronous commands on one serial control thread
         │ JNI
         ▼
 C API / Engine*
@@ -70,10 +70,10 @@ docs/api/howl-engine-kotlin.md
 
 ## Acceptance criteria
 
-- [ ] Documented Kotlin API covers needed control surface.
-- [ ] No UnsatisfiedLinkError on clean install.
-- [ ] Destroy is safe after play.
-- [ ] API avoids per-sample calls.
+- [x] Documented Kotlin API covers lifecycle, transport, queue, diagnostics, and DSP.
+- [x] Clean Android emulator install loads and exercises the native library without linkage errors.
+- [x] Instrumentation covers close during playback, close near EOF, and restart after EOF.
+- [x] Kotlin receives control results and snapshots. Audio buffers stay native.
 
 ## Review checklist
 
@@ -90,12 +90,12 @@ docs/api/howl-engine-kotlin.md
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Documented Kotlin façade, C-compatible control header, consolidated JNI entry points, and Android lifecycle instrumentation. |
+| Files created/modified | Kotlin bridge and compatibility layer, JNI and C API headers, native engine teardown, Android test runner, and API documentation. |
+| Tests executed | C11 header compile check, 62 host tests in each JUCE configuration, Android debug build and unit test, and three instrumentation passes on a clean emulator install under an isolated application ID. |
+| Results | Instrumentation loaded a WAV with a Unicode filename, paused, sought, applied and reset EQ, and covered 36 destroy/restart stress iterations across the three passes. |
+| Known limitations | Android runtime verification used the arm64 emulator. |
+| Decisions made | Use explicit single-thread ownership and synchronous commands. The owning thread joins the playback watcher before releasing or replacing the stream. Keep deprecated Kotlin smoke entry points for compatibility. |
 | Next phase | 4.2 — Media3 custom player adapter |
 
 **Approval required before Phase 4.2.**

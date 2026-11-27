@@ -3,9 +3,15 @@ package com.howl.music.bridge
 import java.io.Closeable
 
 /**
- * Control-thread façade over the native Engine (Phase 2.5).
+ * Owns one native playback engine. Close explicitly, or scope the instance with [use].
  *
- * Call transport/queue APIs from one control thread only — never from an audio callback.
+ * Serialize every instance call, including snapshot reads and [close], on one control
+ * thread. These calls are synchronous. File, queue and stream operations may block, so
+ * use a dedicated control thread for production playback. Keep rendering and audio
+ * callbacks out of this API.
+ *
+ * Commands return 0 on success and a native status code otherwise. [statusName] converts
+ * a status to a readable name. Native linkage failures and calls after close throw.
  */
 class HowlEngine private constructor(
     private var handle: Long,
@@ -46,9 +52,9 @@ class HowlEngine private constructor(
     fun setPlayMode(mode: PlayMode): Int =
         nativeSetPlayMode(requireHandle(), mode.nativeCode)
 
-    fun load(path: String): Int = nativeLoad(requireHandle(), path)
+    fun load(path: String): Int = nativeLoad(requireHandle(), path.encodeToByteArray())
 
-    fun enqueue(path: String): Int = nativeEnqueue(requireHandle(), path)
+    fun enqueue(path: String): Int = nativeEnqueue(requireHandle(), path.encodeToByteArray())
 
     fun clearQueue(): Int = nativeClearQueue(requireHandle())
 
@@ -125,6 +131,7 @@ class HowlEngine private constructor(
         )
     }
 
+    @Deprecated("Use the lifecycle commands directly.")
     fun lifecycleSmokeReport(): String {
         val lines = mutableListOf<String>()
         lines += version()
@@ -145,6 +152,7 @@ class HowlEngine private constructor(
         return lines.joinToString("\n")
     }
 
+    /** Stops playback and releases the handle. Safe to repeat on the control thread. */
     override fun close() {
         if (handle != 0L) {
             nativeDestroy(handle)
@@ -164,7 +172,7 @@ class HowlEngine private constructor(
         private val loadError: String? = try {
             System.loadLibrary("howl_engine")
             null
-        } catch (t: Throwable) {
+        } catch (t: LinkageError) {
             t.message ?: t.javaClass.simpleName
         }
 
@@ -192,8 +200,8 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeSeekMs(handle: Long, positionMs: Long): Int
         @JvmStatic private external fun nativeState(handle: Long): Int
         @JvmStatic private external fun nativeSetPlayMode(handle: Long, mode: Int): Int
-        @JvmStatic private external fun nativeLoad(handle: Long, path: String): Int
-        @JvmStatic private external fun nativeEnqueue(handle: Long, path: String): Int
+        @JvmStatic private external fun nativeLoad(handle: Long, path: ByteArray): Int
+        @JvmStatic private external fun nativeEnqueue(handle: Long, path: ByteArray): Int
         @JvmStatic private external fun nativeClearQueue(handle: Long): Int
         @JvmStatic private external fun nativePlayAt(handle: Long, index: Int): Int
         @JvmStatic private external fun nativeNext(handle: Long): Int

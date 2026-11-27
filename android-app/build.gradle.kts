@@ -15,7 +15,7 @@ android {
         versionCode = 1
         versionName = "0.1.0-dev"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.howl.music.EngineApiInstrumentation"
     }
 
     buildTypes {
@@ -61,6 +61,12 @@ dependencies {
     implementation(libs.androidx.compose.material3)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    constraints {
+        androidTestImplementation("androidx.collection:collection:1.4.4") {
+            because("Match the app runtime's AndroidX Collection version")
+        }
+    }
 
     testImplementation(libs.junit)
 }

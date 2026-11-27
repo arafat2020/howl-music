@@ -1,5 +1,7 @@
 #pragma once
 
+#include "howl/engine_api.h"
+
 #include <cstdint>
 
 namespace howl {
@@ -21,22 +23,3 @@ struct EngineDiagnostics {
 };
 
 }  // namespace howl
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/** C layout matches howl::EngineDiagnostics field order. */
-typedef struct HowlEngineDiagnostics {
-    int32_t sample_rate;
-    int32_t channel_count;
-    int32_t frames_per_burst;
-    int32_t frames_per_callback;
-    int64_t callback_count;
-    int64_t underrun_count;
-    int64_t error_count;
-} HowlEngineDiagnostics;
-
-#ifdef __cplusplus
-}
-#endif

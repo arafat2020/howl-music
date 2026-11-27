@@ -2,6 +2,7 @@
 
 #include "howl/diagnostics.h"
 #include "howl/dsp/process_graph.h"
+#include "howl/engine_api.h"
 #include "howl/queue.h"
 #include "howl/status.h"
 #include "howl/transport.h"
@@ -97,6 +98,7 @@ private:
 #if defined(__ANDROID__)
     Status changeTrack(const std::string& path);
     Status handleEofAdvance();
+    Status stopPlayback();
     void startQueueWatch();
     void stopQueueWatch();
     void queueWatchMain();
@@ -130,52 +132,3 @@ private:
 };
 
 }  // namespace howl
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef struct HowlEngineOpaque HowlEngineHandle;
-
-HowlEngineHandle* howl_engine_create(void);
-void howl_engine_destroy(HowlEngineHandle* engine);
-
-int32_t howl_engine_prepare(HowlEngineHandle* engine);
-int32_t howl_engine_start(HowlEngineHandle* engine);
-int32_t howl_engine_stop(HowlEngineHandle* engine);
-int32_t howl_engine_state(HowlEngineHandle* engine);
-int32_t howl_engine_set_play_mode(HowlEngineHandle* engine, int32_t mode);
-int32_t howl_engine_load(HowlEngineHandle* engine, const char* path);
-int32_t howl_engine_play_mode(HowlEngineHandle* engine);
-
-int32_t howl_engine_enqueue(HowlEngineHandle* engine, const char* path);
-int32_t howl_engine_clear_queue(HowlEngineHandle* engine);
-int32_t howl_engine_play_at(HowlEngineHandle* engine, int32_t index);
-int32_t howl_engine_next(HowlEngineHandle* engine);
-int32_t howl_engine_previous(HowlEngineHandle* engine);
-int32_t howl_engine_set_preamp_gain_db(HowlEngineHandle* engine, float gain_db);
-int32_t howl_engine_set_eq_band_gain_db(HowlEngineHandle* engine, int32_t band, float gain_db);
-/* bands_db must contain ten floats ordered from 31.25 Hz to 16 kHz. */
-int32_t howl_engine_apply_eq_state(
-    HowlEngineHandle* engine, float preamp_db, const float* bands_db, int32_t band_count);
-int32_t howl_engine_reset_eq_to_flat(HowlEngineHandle* engine);
-int32_t howl_engine_set_repeat_mode(HowlEngineHandle* engine, int32_t mode);
-int32_t howl_engine_queue_size(HowlEngineHandle* engine);
-int32_t howl_engine_current_index(HowlEngineHandle* engine);
-int32_t howl_engine_repeat_mode(HowlEngineHandle* engine);
-
-int32_t howl_engine_pause(HowlEngineHandle* engine);
-int32_t howl_engine_resume(HowlEngineHandle* engine);
-int32_t howl_engine_seek_frames(HowlEngineHandle* engine, int64_t frame);
-int32_t howl_engine_seek_ms(HowlEngineHandle* engine, int64_t ms);
-int32_t howl_engine_get_transport(HowlEngineHandle* engine, HowlTransportSnapshot* out);
-
-int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out);
-
-const char* howl_engine_version(void);
-const char* howl_engine_status_string(int32_t status);
-const char* howl_engine_state_string(int32_t state);
-
-#ifdef __cplusplus
-}
-#endif

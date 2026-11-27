@@ -8,6 +8,7 @@
 #endif
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 
 namespace howl {
@@ -303,6 +304,8 @@ Status Engine::start() {
         }
     }
 
+    stopQueueWatch();  // Join any watcher left by the previous stream before replacing it.
+
     auto ring = std::make_unique<PcmRingBuffer>(kRingCapacityFrames, kRingChannels);
     auto worker = std::make_unique<DecodeWorker>();
     auto output = std::make_unique<AudioOutput>();
@@ -356,7 +359,7 @@ Status Engine::start() {
         fileSampleRate_ = output->sampleRate();
     }
 
-    {
+    try {
         std::lock_guard<std::mutex> lock(mutex_);
         if (state_ == EngineState::Prepared || state_ == EngineState::Idle) {
             ring_ = std::move(ring);
@@ -373,6 +376,9 @@ Status Engine::start() {
             }
             return Status::Ok;
         }
+    } catch (...) {
+        (void)stop();
+        throw;
     }
 
     worker->stop();
@@ -403,36 +409,7 @@ Status Engine::stop() {
 #if defined(__ANDROID__)
     stopQueueWatch();
 
-    std::unique_ptr<DecodeWorker> toJoin;
-    std::unique_ptr<AudioOutput> toStop;
-    std::unique_ptr<PcmRingBuffer> toDrop;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (state_ == EngineState::Idle && !output_ && !worker_) {
-            return Status::Ok;
-        }
-        state_ = EngineState::Stopping;
-        toJoin = std::move(worker_);
-        toStop = std::move(output_);
-        toDrop = std::move(ring_);
-        paused_.store(false, std::memory_order_relaxed);
-    }
-
-    if (toJoin) {
-        toJoin->stop();
-        toJoin.reset();
-    }
-    if (toStop) {
-        (void)toStop->stop();
-        toStop.reset();
-    }
-    toDrop.reset();
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    state_ = EngineState::Idle;
-    positionFrames_.store(0, std::memory_order_relaxed);
-    trackChanging_.store(false, std::memory_order_release);
-    return Status::Ok;
+    return stopPlayback();
 #else
     std::lock_guard<std::mutex> lock(mutex_);
     switch (state_) {
@@ -562,6 +539,10 @@ Status Engine::seekMs(int64_t positionMs) {
         }
 #endif
     }
+    if (positionMs < 0 ||
+        (rate > 0 && positionMs > std::numeric_limits<int64_t>::max() / rate)) {
+        return Status::InvalidState;
+    }
     return seekFrames(msToFrames(positionMs, rate));
 }
 
@@ -627,6 +608,41 @@ void Engine::prepareProcessGraphLocked() {
 
 #if defined(__ANDROID__)
 
+Status Engine::stopPlayback() {
+    queueWatchRunning_.store(false, std::memory_order_release);
+
+    std::unique_ptr<DecodeWorker> toJoin;
+    std::unique_ptr<AudioOutput> toStop;
+    std::unique_ptr<PcmRingBuffer> toDrop;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ == EngineState::Idle && !output_ && !worker_) {
+            return Status::Ok;
+        }
+        state_ = EngineState::Stopping;
+        toJoin = std::move(worker_);
+        toStop = std::move(output_);
+        toDrop = std::move(ring_);
+        paused_.store(false, std::memory_order_relaxed);
+    }
+
+    if (toJoin) {
+        toJoin->stop();
+        toJoin.reset();
+    }
+    if (toStop) {
+        (void)toStop->stop();
+        toStop.reset();
+    }
+    toDrop.reset();
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    state_ = EngineState::Idle;
+    positionFrames_.store(0, std::memory_order_relaxed);
+    trackChanging_.store(false, std::memory_order_release);
+    return Status::Ok;
+}
+
 Status Engine::changeTrack(const std::string& path) {
     bool expected = false;
     if (!trackChanging_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
@@ -669,14 +685,14 @@ Status Engine::changeTrack(const std::string& path) {
     auto decoder = openDecoder(path.c_str(), &opened);
     if (!decoder) {
         trackChanging_.store(false, std::memory_order_release);
-        (void)stop();
+        (void)stopPlayback();
         return opened;
     }
 
     const AudioFormat fmt = decoder->format();
     if (fmt.channelCount != 2) {
         trackChanging_.store(false, std::memory_order_release);
-        (void)stop();
+        (void)stopPlayback();
         return Status::UnsupportedFormat;
     }
 
@@ -774,24 +790,25 @@ Status Engine::handleEofAdvance() {
         return changeTrack(path);
     }
     // Repeat::None at end of queue — stop cleanly.
-    return stop();
+    return stopPlayback();
 }
 
 void Engine::startQueueWatch() {
-    stopQueueWatch();
     queueWatchRunning_.store(true, std::memory_order_release);
-    queueWatchThread_ = std::thread([this] { queueWatchMain(); });
+    queueWatchThread_ = std::thread([this] {
+        try {
+            queueWatchMain();
+        } catch (...) {
+            (void)stopPlayback();
+        }
+    });
 }
 
 void Engine::stopQueueWatch() {
     queueWatchRunning_.store(false, std::memory_order_release);
     if (queueWatchThread_.joinable()) {
-        // EOF → stop() may run on this thread; never join ourselves.
-        if (std::this_thread::get_id() != queueWatchThread_.get_id()) {
-            queueWatchThread_.join();
-        } else {
-            queueWatchThread_.detach();
-        }
+        // Only the owner joins the watcher. EOF leaves it joinable until stop or restart.
+        queueWatchThread_.join();
     }
 }
 
