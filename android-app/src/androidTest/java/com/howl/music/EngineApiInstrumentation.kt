@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.ComponentName
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -44,7 +47,7 @@ class EngineApiInstrumentation : Instrumentation() {
             } finally {
                 fixture.delete()
             }
-            result.putString("stream", "\nHowl engine API, Media3 playback, and service reconnect passed.\n")
+            result.putString("stream", "\nHowl engine API, Media3 playback, service reconnect, and audio focus passed.\n")
             Activity.RESULT_OK
         } catch (error: Throwable) {
             result.putString("stream", "\n" + Log.getStackTraceString(error))
@@ -205,6 +208,7 @@ class EngineApiInstrumentation : Instrumentation() {
                     first.play()
                 }
                 waitFor("service playback") { onMain { first.isPlaying } }
+                verifyAudioFocus(first)
             } finally {
                 onMain { first.release() }
             }
@@ -227,6 +231,66 @@ class EngineApiInstrumentation : Instrumentation() {
             }
         } finally {
             onMain { if (!activity.isDestroyed) activity.finish() }
+        }
+    }
+
+    private fun verifyAudioFocus(controller: MediaController) {
+        val audio = checkNotNull(targetContext.getSystemService(AudioManager::class.java))
+        val reasons = mutableListOf<Int>()
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady) reasons += reason
+            }
+        }
+        fun request(gain: Int) = AudioFocusRequest.Builder(gain)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
+            .setOnAudioFocusChangeListener { }
+            .build()
+
+        onMain { controller.addListener(listener) }
+        try {
+            for (gain in listOf(
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK,
+                AudioManager.AUDIOFOCUS_GAIN,
+            )) {
+                val rival = request(gain)
+                val pauseCount = onMain { reasons.size }
+                try {
+                    check(audio.requestAudioFocus(rival) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                    waitFor("focus loss pauses playback") {
+                        onMain {
+                            !controller.isPlaying && !controller.playWhenReady &&
+                                reasons.size > pauseCount &&
+                                reasons.last() == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+                        }
+                    }
+                } finally {
+                    audio.abandonAudioFocusRequest(rival)
+                }
+                SystemClock.sleep(240)
+                onMain {
+                    check(!controller.isPlaying && !controller.playWhenReady)
+                    controller.play()
+                }
+                waitFor("explicit resume after focus loss") { onMain { controller.isPlaying } }
+            }
+
+            val rapid = request(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            repeat(12) {
+                try {
+                    check(audio.requestAudioFocus(rapid) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                } finally {
+                    audio.abandonAudioFocusRequest(rapid)
+                }
+            }
+            waitFor("rapid focus loss leaves playback paused") {
+                onMain { !controller.playWhenReady && !controller.isPlaying }
+            }
+            onMain { controller.play() }
+            waitFor("explicit resume after rapid focus changes") { onMain { controller.isPlaying } }
+        } finally {
+            onMain { controller.removeListener(listener) }
         }
     }
 

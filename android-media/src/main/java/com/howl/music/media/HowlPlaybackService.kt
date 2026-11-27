@@ -21,7 +21,7 @@ class HowlPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val player = try {
-            HowlMedia3Player(mainLooper)
+            HowlMedia3Player(mainLooper, this)
         } catch (failure: RuntimeException) {
             Log.e(TAG, "Could not create the playback engine", failure)
             stopSelf()

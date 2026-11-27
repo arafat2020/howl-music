@@ -3,7 +3,7 @@
 **Milestone:** 4 — Android integration  
 **Priority:** Foundational  
 **Depends on:** 4.3  
-**Status:** Not started
+**Status:** Implemented — physical headset validation pending
 
 ## Objective
 
@@ -17,8 +17,8 @@ Enthusiasts forgive missing visualizers; they do not forgive playing over phone 
 
 ```text
 Android audio focus / noisy intent
-        → MediaSession / Player callbacks
-        → HowlEngine pause or volume duck policy
+        → AudioFocusPolicy on the session player looper
+        → Media3 pause and native HowlEngine pause
 ```
 
 Prefer implementing policy at the Media3/session layer, commanding the engine.
@@ -65,10 +65,25 @@ android-media/.../AudioFocusPolicy.kt
 
 ## Acceptance criteria
 
-- [ ] Focus loss handled per written policy.
-- [ ] Becoming-noisy pauses playback.
-- [ ] No crash on rapid focus changes.
-- [ ] Policy documented for users/devs.
+- [x] Focus loss handled per written policy.
+- [x] A synthetic becoming-noisy event pauses native playback.
+- [ ] Confirm the Android broadcast with a physical wired-headset disconnect.
+- [x] No crash during rapid focus acquisition and release.
+- [x] Policy documented.
+
+## Interruption policy
+
+| Event | Howl behavior |
+|---|---|
+| Play or resume | Request media audio focus before starting or resuming the native stream. If the request is denied, remain paused. |
+| Permanent or temporary focus loss | Pause the native stream, preserve position, and clear the Media3 play request. |
+| Ducking request | Pause with the same focus-loss reason. |
+| Becoming noisy | Pause with Media3’s becoming-noisy reason. |
+| Incoming call | Pause when Android takes focus for the ringtone or call. |
+| Focus returns, the call ends, or headphones reconnect | Remain paused until the user presses Play. |
+| Pause, stop, EOF, or service teardown | Release held focus and unregister the receiver. |
+
+The service registers the receiver while it has audio focus and runs the policy on the player looper. Android requires apps targeting API 35 to request focus from the top app or an active foreground service. If focus cannot be acquired from the notification, opening Howl and pressing Play retries the request. [Android audio focus guide](https://developer.android.com/media/optimize/audio-focus) · [Android AudioManager reference](https://developer.android.com/reference/android/media/AudioManager#ACTION_AUDIO_BECOMING_NOISY)
 
 ## Review checklist
 
@@ -85,12 +100,12 @@ android-media/.../AudioFocusPolicy.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Service-owned audio focus and becoming-noisy handling, with pause reasons propagated through Media3. |
+| Files created/modified | AudioFocusPolicy, Media3 adapter, playback service, Android instrumentation, and this report. |
+| Tests executed | Android debug build and unit test, emulator instrumentation for permanent, temporary, and ducking focus loss, 12 rapid requests, simulated incoming call, and synthetic becoming-noisy receiver invocation. |
+| Results | Focus loss and the simulated call paused playback without automatic resume. The receiver test paused native playback, cleared the play request, reported the route-loss reason, and released focus. The media session reported Paused. |
+| Known limitations | The emulator audio policy rejected the simulated wired output, so Android did not emit a headset-disconnect broadcast. A physical wired-headset check remains pending. |
+| Decisions made | Pause on every loss, including ducking requests. Require explicit Play after interruptions. Scope the policy to session playback. |
 | Next phase | 5.1 — Room schema |
 
 **Approval required before Phase 5.1.**

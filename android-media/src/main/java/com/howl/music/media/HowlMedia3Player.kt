@@ -1,5 +1,6 @@
 package com.howl.music.media
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
@@ -17,7 +18,9 @@ import com.howl.music.bridge.HowlEngine
  * Create, command, and release it on [looper]. Commands run synchronously on that thread.
  */
 @UnstableApi
-class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
+class HowlMedia3Player internal constructor(looper: Looper, context: Context?) : SimpleBasePlayer(looper) {
+    constructor(looper: Looper) : this(looper, null)
+
     private val engine = run {
         verifyApplicationThread()
         HowlEngine.create()
@@ -27,6 +30,15 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
     private var itemUid: Any = Any()
     private var playbackState = Player.STATE_IDLE
     private var playWhenReady = false
+    private var playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+    private val audioFocus = context?.let {
+        AudioFocusPolicy(
+            it.applicationContext,
+            handler,
+            onFocusLost = { interruptPlayback(Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) },
+            onBecomingNoisy = { interruptPlayback(Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY) },
+        )
+    }
     private var repeatMode = Player.REPEAT_MODE_OFF
     private var started = false
     private var error: PlaybackException? = null
@@ -76,7 +88,7 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
             .setPlaylist(playlist)
             .setPlaybackState(playbackState)
             .setRepeatMode(repeatMode)
-            .setPlayWhenReady(playWhenReady, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            .setPlayWhenReady(playWhenReady, playWhenReadyReason)
             .setPlayerError(error)
             .setContentPositionMs(position)
             .setContentBufferedPositionMs(position)
@@ -115,19 +127,19 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> = command {
         refreshPosition()
-        this.playWhenReady = playWhenReady
+        playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
         if (playWhenReady) {
+            this.playWhenReady = true
             if (playbackState == Player.STATE_ENDED) {
                 positionMs = 0
                 playbackState = Player.STATE_READY
             }
             if (playbackState == Player.STATE_READY) {
-                if (started) checkStatus(engine.resume(), "Resume") else startStream()
+                startOrResumeStream()
                 refreshPosition()
             }
-        } else if (started) {
-            checkStatus(engine.pause(), "Pause")
-            refreshPosition()
+        } else {
+            pausePlayback()
         }
     }
 
@@ -145,7 +157,7 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
                 this.positionMs = requested
                 if (playbackState == Player.STATE_ENDED) {
                     playbackState = Player.STATE_READY
-                    if (playWhenReady) startStream()
+                    if (playWhenReady) startOrResumeStream()
                 }
             }
         }
@@ -171,7 +183,11 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
 
     override fun handleRelease(): ListenableFuture<*> {
         handler.removeCallbacks(poll)
-        engine.close()
+        try {
+            engine.close()
+        } finally {
+            audioFocus?.release()
+        }
         started = false
         playbackState = Player.STATE_IDLE
         return Futures.immediateVoidFuture()
@@ -188,10 +204,19 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
         positionMs = positionMs.coerceIn(0, durationMs)
         playbackState = Player.STATE_READY
         error = null
-        if (playWhenReady) startStream()
+        if (playWhenReady) startOrResumeStream()
     }
 
-    private fun startStream() {
+    private fun startOrResumeStream() {
+        if (audioFocus?.acquire() == false) {
+            playWhenReady = false
+            playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+            return
+        }
+        if (started) {
+            checkStatus(engine.resume(), "Resume")
+            return
+        }
         val requested = positionMs
         checkStatus(engine.start(), "Start")
         started = true
@@ -201,9 +226,34 @@ class HowlMedia3Player(looper: Looper) : SimpleBasePlayer(looper) {
         refreshPosition()
     }
 
+    private fun interruptPlayback(reason: Int) {
+        command {
+            playWhenReadyReason = reason
+            pausePlayback()
+        }
+        invalidateState()
+    }
+
+    private fun pausePlayback() {
+        playWhenReady = false
+        try {
+            refreshPosition()
+            if (started) {
+                checkStatus(engine.pause(), "Pause")
+                refreshPosition()
+            }
+        } finally {
+            audioFocus?.release()
+        }
+    }
+
     private fun stopStream() {
-        if (started) checkStatus(engine.stop(), "Stop")
-        started = false
+        try {
+            if (started) checkStatus(engine.stop(), "Stop")
+            started = false
+        } finally {
+            audioFocus?.release()
+        }
     }
 
     private fun refreshPosition() {
