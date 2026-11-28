@@ -3,7 +3,7 @@
 **Milestone:** 8 — Device validation  
 **Priority:** Release-hardening  
 **Depends on:** 8.1, 8.2, 7.4  
-**Status:** Not started
+**Status:** Release audit completed. Public release is no-go pending physical validation and production signing.
 
 ## Objective
 
@@ -65,16 +65,16 @@ THIRD_PARTY_NOTICES.txt
 
 ## Acceptance criteria
 
-- [ ] Device matrix filled for available hardware.
-- [ ] Regression checklist completed with results.
-- [ ] Notices cover shipped third-party code.
-- [ ] Explicit go/no-go recorded.
-- [ ] No unmarked critical bugs in playback/background/focus.
+- [x] Device matrix filled for available hardware.
+- [x] Regression checklist completed with results.
+- [x] Notices cover shipped third-party code.
+- [x] Explicit go/no-go recorded.
+- [x] No unmarked critical bugs in playback/background/focus.
 
 ## Review checklist
 
-- [ ] Claims in UI/README match validated behavior.
-- [ ] Optional features (visualizer/USB) labeled appropriately.
+- [x] Claims in UI/README match validated behavior.
+- [x] Optional features (visualizer/USB) labeled appropriately.
 
 ## Potential pitfalls
 
@@ -86,12 +86,12 @@ THIRD_PARTY_NOTICES.txt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Device matrix, go/no-go checklist, and release limitations. Corrected native ABI packaging and packaged third-party notices. |
+| Files created/modified | [Device matrix](../release/device-matrix.md), [checklist](../release/checklist.md), [known limitations](../release/known-limitations.md), third-party notices and Android build scripts. |
+| Tests executed | JUCE-enabled native tests, Android JVM tests, Android release-profile instrumentation and APK inspection. |
+| Results | 70 native tests passed. See the [checklist](../release/checklist.md) for regression and packaging results. |
+| Known limitations | Physical primary and secondary phones, x86_64 runtime smoke, sustained performance and battery testing, and production-signed verification remain pending. |
+| Decisions made | Keep the candidate for internal testing. Record the physical-device and signed-artifact gates before asking for release approval. |
 | Next phase | Post-release backlog (advanced effects, visualizer styles, USB extras) |
 
 **First credible release gate — requires explicit approval to ship.**

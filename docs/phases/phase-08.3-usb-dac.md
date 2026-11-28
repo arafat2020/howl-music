@@ -3,7 +3,7 @@
 **Milestone:** 8 — Device validation  
 **Priority:** Optional  
 **Depends on:** 8.2  
-**Status:** Not started
+**Status:** Investigation documented. USB validation is blocked on hardware.
 
 ## Objective
 
@@ -63,15 +63,15 @@ docs/perf/usb-dac-matrix.md
 
 ## Acceptance criteria
 
-- [ ] Written investigation results (even if “hardware unavailable”).
-- [ ] No unverified product claims added.
-- [ ] Diagnostics show negotiated rate when known.
+- [x] Written investigation results (even if “hardware unavailable”).
+- [x] No unverified product claims added.
+- [x] Diagnostics show negotiated rate when known.
 - [ ] Crash-free hotplug handling for tested devices.
 
 ## Review checklist
 
-- [ ] Results distinguish phone vs DAC limitations.
-- [ ] Follow-up work clearly optional.
+- [x] Results distinguish phone vs DAC limitations.
+- [x] Follow-up work clearly optional.
 
 ## Potential pitfalls
 
@@ -82,12 +82,12 @@ docs/perf/usb-dac-matrix.md
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | USB DAC investigation and physical verification procedure. |
+| Files created/modified | [USB DAC matrix](../perf/usb-dac-matrix.md). |
+| Tests executed | 44.1 kHz and 48 kHz playback through the ARM64 API 36 emulator speaker route. |
+| Results | Diagnostics distinguished source/stream rate from the reported hardware rate. |
+| Known limitations | Physical phone and DAC availability blocked USB negotiation and hot-plug tests. |
+| Decisions made | Keep USB-specific controls and claims out of the release until physical evidence is available. |
 | Next phase | 8.4 — Device matrix & release checklist |
 
 **Approval required before Phase 8.4.**

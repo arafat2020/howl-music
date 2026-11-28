@@ -1,0 +1,48 @@
+Howl Music — Third-party notices
+
+Android application runtime
+
+* AndroidX libraries from the Android Open Source Project, including Activity,
+  AppCompat, Compose/Material, Core, Graphics Path, Lifecycle, Media/Media3,
+  Navigation, Room/SQLite, and supporting AndroidX modules, and Google
+  Accompanist. Apache License 2.0.
+  https://android.googlesource.com/platform/frameworks/support/
+  https://github.com/google/accompanist
+* Kotlin standard library, kotlinx.coroutines, kotlinx.serialization, and
+  JetBrains annotations. Apache License 2.0.
+  https://github.com/JetBrains/kotlin
+  https://github.com/Kotlin/kotlinx.coroutines
+  https://github.com/Kotlin/kotlinx.serialization
+  https://github.com/JetBrains/java-annotations
+* Google Guava and its Android runtime dependencies, and JSpecify annotations.
+  Apache License 2.0.
+  https://github.com/google/guava
+  https://github.com/jspecify/jspecify
+* Coil, OkHttp, and Okio. Apache License 2.0.
+  https://github.com/coil-kt/coil
+  https://github.com/square/okhttp
+  https://github.com/square/okio
+* OkHttp embeds data generated from the Public Suffix List under MPL 2.0.
+  The dependency's original notice is at okhttp3/internal/publicsuffix/NOTICE
+  in the APK. Source data is at https://publicsuffix.org/list/public_suffix_list.dat.
+* Oboe 1.9.3, Google. Apache License 2.0.
+  https://github.com/google/oboe/tree/1.9.3
+* dr_flac 0.13.5, David Reid. This distribution uses the MIT No Attribution option
+  in the vendored header. https://github.com/mackron/dr_libs
+* Barlow Regular, Medium, SemiBold, and Bold, The Barlow Project Authors.
+  SIL Open Font License 1.1. https://github.com/jpt/barlow
+* Android NDK 28.2.13676358 runtime, including libc++_shared and compiler runtime
+  components. See the matching NDK NOTICE and NOTICE.toolchain. They include
+  LLVM's Apache 2.0 license with LLVM exceptions and component-specific terms.
+  https://developer.android.com/ndk
+
+The APK carries the license texts and matching NDK notices in assets/third-party/.
+Dependency-provided notices also retain their original paths where packaged.
+
+Build or test dependencies
+
+* JUCE 8.0.6 is enabled for the host DSP test build. The Android artifact audited
+  here uses HOWL_WITH_JUCE=OFF. Reassess licensing before distributing a build
+  with JUCE enabled. https://juce.com/legal/juce-8-licence/
+* GoogleTest and JUnit are used by tests. FFmpeg has been used to generate
+  local test fixtures. These are outside the Android runtime dependency set.

@@ -18,6 +18,8 @@ android {
         applicationId = "com.howl.music"
         minSdk = 26
         targetSdk = 35
+        // Every packaged ABI must contain the playback engine, including transitive native libraries.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         versionCode = 1
         versionName = "0.1.0-dev"
 
