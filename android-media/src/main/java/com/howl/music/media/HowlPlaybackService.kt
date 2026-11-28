@@ -94,6 +94,7 @@ class HowlPlaybackService : MediaSessionService() {
                     .add(PlaybackEqualizer.read)
                     .add(PlaybackEqualizer.apply)
                     .add(PlaybackQueue.edit)
+                    .add(PlaybackAnalysis.read)
                     .build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
@@ -128,6 +129,19 @@ class HowlPlaybackService : MediaSessionService() {
             val player = session.player as HowlMedia3Player
             if (customCommand == PlaybackQueue.edit) return handleQueueEdit(player, args)
             val result = when (customCommand) {
+                PlaybackAnalysis.read -> {
+                    val extras = Bundle()
+                    if (args.getBoolean(PlaybackAnalysis.DIAGNOSTICS_ONLY)) {
+                        val diagnostics = player.analysisDiagnostics()
+                        extras.putLong(PlaybackAnalysis.UNDERRUNS, diagnostics.underrunCount)
+                        extras.putLong(PlaybackAnalysis.CALLBACKS, diagnostics.callbackCount)
+                    } else {
+                        val snapshot = player.readAnalysis()
+                        extras.putFloat(PlaybackAnalysis.PEAK, snapshot.peak)
+                        extras.putFloat(PlaybackAnalysis.RMS, snapshot.rms)
+                    }
+                    SessionResult(SessionResult.RESULT_SUCCESS, extras)
+                }
                 PlaybackEqualizer.read -> SessionResult(SessionResult.RESULT_SUCCESS, player.equalizer.toBundle())
                 PlaybackEqualizer.apply -> {
                     val settings = PlaybackEqualizer.readSettings(args)

@@ -35,7 +35,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.media.PlaybackQueue.Action
+import com.howl.music.ui.visualizer.VisualizerScreen
 import com.howl.music.ui.queue.QueueScreen
 import com.howl.music.ui.queue.QueueUiState
 import com.howl.music.data.db.LibraryRow
@@ -56,11 +58,13 @@ private enum class Tab(val route: String, val label: String) {
 
 private const val NOW_PLAYING = "now-playing"
 private const val QUEUE = "queue"
+private const val VISUALIZER = "visualizer"
 
 @UnstableApi
 @Composable
 internal fun HowlNavHost(
     playback: PlaybackUiState,
+    readAnalysis: suspend () -> AnalysisSnapshot,
     equalizer: EqualizerViewModel,
     onToggle: () -> Unit,
     onPlayTrack: (LibraryRow) -> Unit,
@@ -90,7 +94,7 @@ internal fun HowlNavHost(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            if (route != NOW_PLAYING && route != QUEUE) {
+            if (route != NOW_PLAYING && route != QUEUE && route != VISUALIZER) {
                 Column {
                     MiniPlayer(
                         playback,
@@ -149,6 +153,13 @@ internal fun HowlNavHost(
                     onSkipForward = onSkipForward,
                     onBack = { nav.popBackStack() },
                     onQueue = { nav.navigate(QUEUE) { launchSingleTop = true } },
+                    onVisualizer = { nav.navigate(VISUALIZER) { launchSingleTop = true } },
+                )
+            }
+            composable(VISUALIZER) {
+                VisualizerScreen(
+                    playback, readAnalysis, onToggle,
+                    onBack = { nav.popBackStack() },
                 )
             }
             composable(QUEUE) {

@@ -12,6 +12,7 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.bridge.HowlEngine
 
 /**
@@ -43,6 +44,29 @@ class HowlMedia3Player internal constructor(
     }
 
     private val handler = Handler(looper)
+    private var analyzing = false
+    private val expireAnalysis = Runnable { stopAnalysis() }
+
+    internal fun readAnalysis(): AnalysisSnapshot {
+        verifyApplicationThread()
+        if (!isPlaying) return AnalysisSnapshot.Silent
+        if (!analyzing) analyzing = engine.setAnalysisEnabled(true) == 0
+        if (!analyzing) return AnalysisSnapshot.Silent
+        handler.removeCallbacks(expireAnalysis)
+        handler.postDelayed(expireAnalysis, ANALYSIS_LEASE_MS)
+        return engine.analysis()
+    }
+
+    internal fun analysisDiagnostics() = engine.diagnostics()
+
+    private fun stopAnalysis() {
+        handler.removeCallbacks(expireAnalysis)
+        if (analyzing) {
+            engine.setAnalysisEnabled(false)
+            analyzing = false
+        }
+    }
+
     private class Entry(val item: MediaItem)
 
     private val playlist = mutableListOf<Entry>()
@@ -328,6 +352,7 @@ class HowlMedia3Player internal constructor(
 
     override fun handleRelease(): ListenableFuture<*> {
         handler.removeCallbacks(poll)
+        stopAnalysis()
         try {
             engine.close()
         } finally {
@@ -387,6 +412,7 @@ class HowlMedia3Player internal constructor(
 
     private fun pausePlayback() {
         playWhenReady = false
+        stopAnalysis()
         try {
             refreshPosition()
             if (started) {
@@ -439,6 +465,7 @@ class HowlMedia3Player internal constructor(
     }
 
     private companion object {
+        const val ANALYSIS_LEASE_MS = 750L
         const val POLL_INTERVAL_MS = 200L
     }
 }

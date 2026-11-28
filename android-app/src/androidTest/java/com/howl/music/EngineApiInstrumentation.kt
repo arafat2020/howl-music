@@ -14,6 +14,10 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -31,6 +35,7 @@ import com.howl.music.data.writeUserData
 import com.howl.music.data.scan.verifyLibraryScan
 import com.howl.music.media.HowlMedia3Player
 import com.howl.music.media.HowlPlaybackService
+import com.howl.music.media.PlaybackAnalysis
 import com.howl.music.media.PlaybackEqualizer
 import com.howl.music.media.PlaybackQueue
 import java.io.File
@@ -41,16 +46,25 @@ import java.util.concurrent.TimeUnit
 /** Exercises the production bridge and native library on an Android control thread. */
 class EngineApiInstrumentation : Instrumentation() {
     private var persistenceStep: String? = null
+    private var profileVisualizerOnly = false
+    private var profileTrackUri: Uri? = null
 
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         persistenceStep = arguments?.getString("persistenceStep")
+        profileVisualizerOnly = arguments?.getString("profileVisualizer") == "true"
+        profileTrackUri = arguments?.getString("profileTrackUri")?.let(Uri::parse)
         start()
     }
 
     override fun onStart() {
         val result = Bundle()
         val status = try {
+            if (profileVisualizerOnly) {
+                result.putString("stream", "\n${profileVisualizer()}\n")
+                finish(Activity.RESULT_OK, result)
+                return
+            }
             val fixture = File.createTempFile("howl-🎵-", ".wav", targetContext.cacheDir)
             try {
                 targetContext.assets.open("sine_880_16bit_stereo.wav").use { input ->
@@ -272,6 +286,7 @@ class EngineApiInstrumentation : Instrumentation() {
                     first.play()
                 }
                 waitFor("service playback") { onMain { first.isPlaying } }
+                verifySessionAnalysis(first)
                 verifySessionEqualizer(first)
                 verifyAudioFocus(first)
             } finally {
@@ -307,6 +322,121 @@ class EngineApiInstrumentation : Instrumentation() {
         } finally {
             onMain { if (!activity.isDestroyed) activity.finish() }
         }
+    }
+
+    // Opt-in manual profile. Follow the status prompts and leave each screen visible for its sample window.
+    private fun profileVisualizer(): String {
+        val activity = startActivitySync(
+            Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        val token = SessionToken(targetContext, ComponentName(targetContext, HowlPlaybackService::class.java))
+        val controller = onMain { MediaController.Builder(targetContext, token).buildAsync() }.get(5, TimeUnit.SECONDS)
+        try {
+            val uri = profileTrackUri
+            val item = if (uri == null) {
+                MediaItem.Builder().setMediaId(HowlPlaybackService.SAMPLE_MEDIA_ID).build()
+            } else {
+                MediaItem.Builder().setMediaId(uri.toString())
+                    .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
+                    .setMediaMetadata(MediaMetadata.Builder().setTitle("Visualizer profile").build())
+                    .build()
+            }
+            onMain { controller.setMediaItem(item) }
+            waitFor("profile track prepared for playback") {
+                onMain { controller.currentMediaItem?.mediaId == item.mediaId &&
+                    controller.isCommandAvailable(Player.COMMAND_PREPARE) }
+            }
+            onMain {
+                controller.repeatMode = if (uri == null) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                controller.prepare()
+                controller.play()
+            }
+            waitFor("profile tone playing") { onMain { controller.isPlaying } }
+
+            fun measure(screen: String): String {
+                sendStatus(1, Bundle().apply { putString("profile", "Open $screen") })
+                SystemClock.sleep(12_000)
+                val durations = mutableListOf<LongArray>()
+                val listener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+                    durations += longArrayOf(
+                        metrics.getMetric(FrameMetrics.TOTAL_DURATION),
+                        metrics.getMetric(FrameMetrics.DRAW_DURATION),
+                        metrics.getMetric(FrameMetrics.SWAP_BUFFERS_DURATION),
+                    )
+                }
+                val before = visualizerDiagnostics(controller)
+                onMain { activity.window.addOnFrameMetricsAvailableListener(listener, Handler(Looper.getMainLooper())) }
+                SystemClock.sleep(5_000)
+                val frames = onMain {
+                    activity.window.removeOnFrameMetricsAvailableListener(listener)
+                    durations.filter { it[0] >= 0 }
+                }
+                val after = visualizerDiagnostics(controller)
+                check(frames.isNotEmpty() && onMain { controller.isPlaying })
+                val callbacks = after.getLong(PlaybackAnalysis.CALLBACKS) - before.getLong(PlaybackAnalysis.CALLBACKS)
+                val underruns = after.getLong(PlaybackAnalysis.UNDERRUNS) - before.getLong(PlaybackAnalysis.UNDERRUNS)
+                fun percentile(metric: Int): Double {
+                    val sorted = frames.map { it[metric] }.sorted()
+                    return sorted[((sorted.size - 1) * 0.95).toInt()] / 1_000_000.0
+                }
+                return "$screen frames=${frames.size} p95Ms=${percentile(0)} drawP95Ms=${percentile(1)} " +
+                    "swapP95Ms=${percentile(2)} audioCallbacks=$callbacks underruns=$underruns"
+            }
+
+            return listOf(measure("Now Playing"), measure("Visualizer")).joinToString("\n")
+        } finally {
+            onMain {
+                controller.setMediaItem(MediaItem.EMPTY)
+                controller.release()
+                activity.finish()
+            }
+        }
+    }
+
+    private fun visualizerDiagnostics(controller: MediaController): Bundle {
+        val response = onMain {
+            controller.sendCustomCommand(PlaybackAnalysis.read, Bundle().apply {
+                putBoolean(PlaybackAnalysis.DIAGNOSTICS_ONLY, true)
+            })
+        }.get(5, TimeUnit.SECONDS)
+        check(response.resultCode == SessionResult.RESULT_SUCCESS)
+        return response.extras
+    }
+
+    private fun verifySessionAnalysis(controller: MediaController) {
+        fun read(): Bundle {
+            val response = onMain {
+                controller.sendCustomCommand(PlaybackAnalysis.read, Bundle.EMPTY)
+            }.get(5, TimeUnit.SECONDS)
+            check(response.resultCode == SessionResult.RESULT_SUCCESS)
+            return response.extras
+        }
+
+        fun window(poll: Boolean): String {
+            val before = visualizerDiagnostics(controller)
+            var hasSignal = false
+            repeat(40) {
+                if (poll) {
+                    val snapshot = PlaybackAnalysis.snapshot(read())
+                    hasSignal = hasSignal || snapshot.peak > 0.01f && snapshot.rms > 0f
+                }
+                SystemClock.sleep(50)
+            }
+            val after = visualizerDiagnostics(controller)
+            val callbacks = after.getLong(PlaybackAnalysis.CALLBACKS) - before.getLong(PlaybackAnalysis.CALLBACKS)
+            val underruns = after.getLong(PlaybackAnalysis.UNDERRUNS) - before.getLong(PlaybackAnalysis.UNDERRUNS)
+            check(callbacks > 0 && (!poll || hasSignal))
+            return "poll=$poll callbacks=$callbacks underruns=$underruns"
+        }
+
+        val baseline = window(false)
+        val polling = window(true)
+        Log.i("HowlVisualizer", "$baseline; $polling")
+        onMain { controller.pause() }
+        waitFor("visualizer playback paused") { onMain { !controller.isPlaying } }
+        check(PlaybackAnalysis.snapshot(read()) == AnalysisSnapshot.Silent)
+        onMain { controller.play() }
+        waitFor("visualizer playback resumed") { onMain { controller.isPlaying } }
     }
 
     private fun verifySessionEqualizer(controller: MediaController) {

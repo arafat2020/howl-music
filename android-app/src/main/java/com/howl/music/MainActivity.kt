@@ -16,10 +16,12 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionResult
+import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.data.db.LibraryRow
 import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.prefs.PreferencesRepository
 import com.howl.music.media.HowlPlaybackService
+import com.howl.music.media.PlaybackAnalysis
 import com.howl.music.media.PlaybackQueue
 import com.howl.music.ui.queue.QueueTrack
 import com.howl.music.ui.queue.QueueUiState
@@ -32,6 +34,8 @@ import com.howl.music.ui.theme.HowlTheme
 import com.howl.music.ui.nav.HowlNavHost
 import com.howl.music.ui.player.PlaybackUiState
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
@@ -60,6 +64,7 @@ class MainActivity : ComponentActivity() {
             HowlTheme(reduceMotion = reduceMotion) {
                 HowlNavHost(
                     playback = playback.value,
+                    readAnalysis = ::readAnalysis,
                     equalizer = equalizer,
                     onToggle = ::togglePlayback,
                     onPlayTrack = ::playTrack,
@@ -115,6 +120,24 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         database.close()
+    }
+
+    private suspend fun readAnalysis(): AnalysisSnapshot {
+        val controller = player.value ?: return AnalysisSnapshot.Silent
+        if (!controller.isSessionCommandAvailable(PlaybackAnalysis.read)) return AnalysisSnapshot.Silent
+        return suspendCancellableCoroutine { continuation ->
+            val future = controller.sendCustomCommand(PlaybackAnalysis.read, Bundle.EMPTY)
+            continuation.invokeOnCancellation { future.cancel(false) }
+            future.addListener({
+                val result = runCatching { future.get() }.getOrNull()
+                val snapshot = if (player.value === controller && result?.resultCode == SessionResult.RESULT_SUCCESS) {
+                    PlaybackAnalysis.snapshot(result.extras)
+                } else {
+                    AnalysisSnapshot.Silent
+                }
+                continuation.resume(snapshot)
+            }, ContextCompat.getMainExecutor(this))
+        }
     }
 
     private fun seek(mediaId: String, positionMs: Long) {

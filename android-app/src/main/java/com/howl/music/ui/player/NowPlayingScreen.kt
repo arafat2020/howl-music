@@ -59,6 +59,7 @@ internal fun NowPlayingScreen(
     onSkipForward: () -> Unit,
     onBack: () -> Unit,
     onQueue: () -> Unit,
+    onVisualizer: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val typography = MaterialTheme.typography
@@ -114,6 +115,7 @@ internal fun NowPlayingScreen(
                     modifier = Modifier.weight(1f).semantics { contentDescription = if (playback.hasNextTrack) "Next track" else "Skip forward 15 seconds" },
                     enabled = playback.canSkipForward, primary = false)
             }
+            HowlButton("Visualizer", onVisualizer, Modifier.fillMaxWidth(), primary = false)
         }
     }
 }
