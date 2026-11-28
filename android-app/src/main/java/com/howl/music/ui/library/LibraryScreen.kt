@@ -24,6 +24,7 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,7 +63,8 @@ internal fun LibraryScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Library", style = MaterialTheme.typography.headlineLarge)
+            Text("Library", style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.semantics { heading() })
             HowlButton("Scan music", onScan, primary = false)
         }
         Row(

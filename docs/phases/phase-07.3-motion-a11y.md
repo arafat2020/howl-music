@@ -3,7 +3,7 @@
 **Milestone:** 7 — Visualizer & polish  
 **Priority:** Release-hardening  
 **Depends on:** 6.4  
-**Status:** Not started
+**Status:** Implemented
 
 ## Objective
 
@@ -16,9 +16,19 @@ Brief motion principles are part of the premium feel — but accessibility and l
 ## Architecture
 
 ```text
-MotionTokens / Duration / Spring specs in design system
-UserPreference.reducedMotion → disables parallax, heavy transitions
+Room preference + Android animator scale → theme motion mode
+Theme motion mode → navigation, artwork, controls, queue, visualizer
 ```
+
+## Motion behavior
+
+| Mode | Opening and closing Now Playing | Artwork and controls | Queue and visualizer |
+|---|---|---|---|
+| Full | A short spring and fade connect the mini-player to Now Playing. | Artwork changes crossfade and drag settles with a spring. Buttons use subtle spring press feedback. | The dragged queue row follows the pointer. The visualizer reacts during playback. |
+| Reduce motion | A 90 ms fade keeps the destination change in place. | Artwork switches in place, tilt is disabled, and buttons use an immediate pressed tint. | Queue reorder keeps rows stationary and highlights the target. The visualizer shows a static composition. |
+| Android animations off | The destination changes immediately. | Artwork and controls use the reduced-motion behavior. | Queue and visualizer use the reduced-motion behavior. |
+
+Settings stores the app preference in Room. The theme observes Android’s animator scale while active. The Settings switch reflects the saved preference independently of the system setting and displays when Android animations are off. During a fade, the departing destination is removed from accessibility traversal. Material focus feedback and control hit targets are preserved. Library tabs and rows remain stationary, with brief feedback only on interaction.
 
 ## Learning objectives
 
@@ -63,15 +73,15 @@ android-app/.../data/prefs/MotionPreferences.kt
 
 ## Acceptance criteria
 
-- [ ] Motion tokens exist and are reused.
-- [ ] Reduced-motion path verified on major screens.
-- [ ] Library remains restrained.
-- [ ] Playback unaffected.
+- [x] Motion tokens exist and are reused.
+- [x] Reduced-motion path verified on major screens.
+- [x] Library remains restrained.
+- [x] Playback unaffected.
 
 ## Review checklist
 
-- [ ] Motion supports hierarchy, not decoration spam.
-- [ ] Preference persists.
+- [x] Motion supports hierarchy, not decoration spam.
+- [x] Preference persists.
 
 ## Potential pitfalls
 
@@ -82,12 +92,12 @@ android-app/.../data/prefs/MotionPreferences.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Shared spring and fade specs, mini-player transitions, artwork crossfades, pressed feedback, and one app-wide motion policy. |
+| Files created/modified | Motion tokens and system preference observer, theme and Settings, player and navigation, visualizer, queue, and shared controls. |
+| Tests executed | Android build and JVM tests, Android instrumentation, emulator motion checks across a restart, and a TalkBack focus check on the emulator. The sine-meter assertion now waits for a representative callback block to account for short emulator callbacks. |
+| Results | Artwork tilted and settled in full motion and stayed still with either motion setting. The visualizer followed the same policy, the preference persisted, and playback continued during standard navigation. A reduced-motion queue drag highlighted its target and reordered upcoming tracks. With TalkBack enabled, Back had focus in Now Playing and focus moved to the Settings heading on return. |
+| Known limitations | The emulator check covered TalkBack focus and navigation. Spoken announcements and physical-device motion feel remain to be validated. |
+| Decisions made | Animate only mini-player expansion and collapse. Apply reduced motion to transforms and retain non-spatial feedback and accessible actions. |
 | Next phase | 7.4 — Performance & battery profiling |
 
 **Approval required before Phase 7.4.**

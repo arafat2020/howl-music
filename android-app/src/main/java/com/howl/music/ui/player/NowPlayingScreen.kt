@@ -1,8 +1,7 @@
 package com.howl.music.ui.player
 
-import android.animation.ValueAnimator
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -45,7 +45,9 @@ import com.howl.music.ui.components.AlbumArt
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.components.HowlSlider
 import com.howl.music.ui.theme.HowlSpacing
-import com.howl.music.ui.theme.LocalReduceMotion
+import com.howl.music.ui.theme.HowlMotion
+import com.howl.music.ui.theme.LocalMotionMode
+import com.howl.music.ui.theme.MotionMode
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 
@@ -122,7 +124,7 @@ internal fun NowPlayingScreen(
 
 @Composable
 private fun NowPlayingArtwork(uri: String?, sizeLimit: Dp) {
-    val reduceMotion = LocalReduceMotion.current
+    val reduceMotion = LocalMotionMode.current != MotionMode.Full
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         val artworkSize = maxWidth.coerceAtMost(sizeLimit)
         var drag by remember(uri, reduceMotion) { mutableFloatStateOf(0f) }
@@ -131,7 +133,7 @@ private fun NowPlayingArtwork(uri: String?, sizeLimit: Dp) {
         LaunchedEffect(dragging, motionOffset) {
             if (!dragging) {
                 motionOffset.snapTo(drag)
-                motionOffset.animateTo(0f, spring())
+                motionOffset.animateTo(0f, HowlMotion.settle())
                 drag = 0f
             }
         }
@@ -139,15 +141,13 @@ private fun NowPlayingArtwork(uri: String?, sizeLimit: Dp) {
             .pointerInput(uri) {
                 detectHorizontalDragGestures(
                     onDragStart = {
-                        if (ValueAnimator.areAnimatorsEnabled()) {
-                            drag = motionOffset.value
-                            dragging = true
-                        }
+                        drag = motionOffset.value
+                        dragging = true
                     },
                     onDragEnd = { dragging = false },
                     onDragCancel = { dragging = false },
                 ) { change, delta ->
-                    if (dragging && ValueAnimator.areAnimatorsEnabled()) {
+                    if (dragging) {
                         change.consume()
                         drag = (drag + delta / size.width.coerceAtLeast(1)).coerceIn(-0.12f, 0.12f)
                     }
@@ -159,8 +159,14 @@ private fun NowPlayingArtwork(uri: String?, sizeLimit: Dp) {
                 rotationY = offset * 48f
                 cameraDistance = 16 * density
             }
-        Box(motion) {
-            AlbumArt(uri, artworkSize, Modifier.clip(MaterialTheme.shapes.large))
+        Box(motion.clearAndSetSemantics {}) {
+            if (reduceMotion) {
+                AlbumArt(uri, artworkSize, Modifier.clip(MaterialTheme.shapes.large))
+            } else {
+                Crossfade(uri, animationSpec = HowlMotion.fade(), label = "Artwork") { trackUri ->
+                    AlbumArt(trackUri, artworkSize, Modifier.clip(MaterialTheme.shapes.large))
+                }
+            }
         }
     }
 }

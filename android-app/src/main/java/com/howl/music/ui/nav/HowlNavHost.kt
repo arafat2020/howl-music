@@ -2,7 +2,12 @@ package com.howl.music.ui.nav
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -25,10 +30,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.invisibleToUser
+import androidx.compose.ui.semantics.semantics
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -46,7 +56,9 @@ import com.howl.music.ui.eq.EqualizerScreen
 import com.howl.music.ui.eq.EqualizerViewModel
 import com.howl.music.ui.player.MiniPlayer
 import com.howl.music.ui.player.NowPlayingScreen
-import com.howl.music.ui.theme.LocalReduceMotion
+import com.howl.music.ui.theme.HowlMotion
+import com.howl.music.ui.theme.LocalMotionMode
+import com.howl.music.ui.theme.MotionMode
 import com.howl.music.ui.player.PlaybackUiState
 import com.howl.music.ui.theme.HowlSpacing
 
@@ -77,6 +89,7 @@ internal fun HowlNavHost(
     onSeek: (String, Long) -> Unit,
     onSkipBack: () -> Unit,
     onSkipForward: () -> Unit,
+    reduceMotionPreference: Boolean,
     onReduceMotionChange: (Boolean) -> Unit,
     readPositionMs: () -> Long,
     debugTools: (@Composable ColumnScope.() -> Unit)? = null,
@@ -84,6 +97,9 @@ internal fun HowlNavHost(
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route ?: Tab.Library.route
+    val activeRoute by rememberUpdatedState(route)
+    val motion by rememberUpdatedState(LocalMotionMode.current)
+    val savedMotionPreference by rememberUpdatedState(reduceMotionPreference)
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(queueMessage) {
         if (queueMessage != null) {
@@ -119,31 +135,61 @@ internal fun HowlNavHost(
             navController = nav,
             startDestination = Tab.Library.route,
             modifier = Modifier.fillMaxSize().padding(padding),
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
+            enterTransition = {
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                when {
+                    motion == MotionMode.Off || !isPlayerExpansion(from, to) -> EnterTransition.None
+                    motion == MotionMode.Reduced -> fadeIn(HowlMotion.reducedFade())
+                    to == NOW_PLAYING -> fadeIn(HowlMotion.fade()) +
+                        slideInVertically(HowlMotion.settle()) { it / 12 }
+                    else -> fadeIn(HowlMotion.fade())
+                }
+            },
+            exitTransition = {
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                when {
+                    motion == MotionMode.Off || !isPlayerExpansion(from, to) -> ExitTransition.None
+                    motion == MotionMode.Reduced -> fadeOut(HowlMotion.reducedFade())
+                    from == NOW_PLAYING -> fadeOut(HowlMotion.fade()) +
+                        slideOutVertically(HowlMotion.settle()) { it / 12 }
+                    else -> fadeOut(HowlMotion.fade())
+                }
+            },
         ) {
-            composable(Tab.Library.route) {
+            fun page(path: String, content: @Composable () -> Unit) {
+                composable(path) {
+                    val visibility = if (activeRoute == path) Modifier else
+                        Modifier.clearAndSetSemantics { invisibleToUser() }
+                    Box(Modifier.fillMaxSize().then(visibility)) { content() }
+                }
+            }
+            page(Tab.Library.route) {
                 LibraryScreen(onPlay = onPlayTrack, onPlayNext = onPlayNext, onScan = onScan)
             }
-            composable(Tab.Equalizer.route) {
+            page(Tab.Equalizer.route) {
                 EqualizerScreen(equalizer)
             }
-            composable(Tab.Settings.route) {
+            page(Tab.Settings.route) {
                 Destination("Settings") {
-                    val reduceMotion = LocalReduceMotion.current
+                    val reduceMotion = savedMotionPreference
                     Row(
                         modifier = Modifier.fillMaxWidth().heightIn(min = HowlSpacing.TouchTarget)
                             .toggleable(reduceMotion, role = Role.Switch, onValueChange = onReduceMotionChange),
                         horizontalArrangement = Arrangement.spacedBy(HowlSpacing.Medium),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Reduce artwork motion", modifier = Modifier.weight(1f))
+                        Text("Reduce motion", modifier = Modifier.weight(1f))
                         Switch(checked = reduceMotion, onCheckedChange = null)
+                    }
+                    if (LocalMotionMode.current == MotionMode.Off) {
+                        Text("Android animations are off", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     debugTools?.invoke(this)
                 }
             }
-            composable(NOW_PLAYING) {
+            page(NOW_PLAYING) {
                 NowPlayingScreen(
                     playback = playback,
                     readPositionMs = readPositionMs,
@@ -156,18 +202,22 @@ internal fun HowlNavHost(
                     onVisualizer = { nav.navigate(VISUALIZER) { launchSingleTop = true } },
                 )
             }
-            composable(VISUALIZER) {
+            page(VISUALIZER) {
                 VisualizerScreen(
                     playback, readAnalysis, onToggle,
                     onBack = { nav.popBackStack() },
                 )
             }
-            composable(QUEUE) {
+            page(QUEUE) {
                 QueueScreen(queue, onBack = { nav.popBackStack() }, onEdit = onQueueEdit)
             }
         }
     }
 }
+
+private fun isPlayerExpansion(from: String?, to: String?): Boolean =
+    (from == NOW_PLAYING && Tab.entries.any { it.route == to }) ||
+        (to == NOW_PLAYING && Tab.entries.any { it.route == from })
 
 @Composable
 private fun Tabs(route: String, onSelect: (Tab) -> Unit) {
@@ -205,7 +255,7 @@ private fun Destination(title: String, content: @Composable ColumnScope.() -> Un
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(HowlSpacing.Screen),
         verticalArrangement = Arrangement.spacedBy(HowlSpacing.Medium),
     ) {
-        Text(title, style = MaterialTheme.typography.displayMedium)
+        Text(title, style = MaterialTheme.typography.displayMedium, modifier = Modifier.semantics { heading() })
         content()
     }
 }

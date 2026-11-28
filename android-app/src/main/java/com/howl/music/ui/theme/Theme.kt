@@ -7,10 +7,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-
-val LocalReduceMotion = staticCompositionLocalOf { false }
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.howl.music.data.prefs.observeSystemMotion
+import com.howl.music.data.prefs.readSystemMotion
 
 @Composable
 fun HowlTheme(
@@ -18,12 +21,20 @@ fun HowlTheme(
     reduceMotion: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val resolver = LocalContext.current.contentResolver
+    val systemMotion by remember(resolver) { observeSystemMotion(resolver) }
+        .collectAsStateWithLifecycle(initialValue = remember(resolver) { readSystemMotion(resolver) })
+    val motion = when {
+        !systemMotion -> MotionMode.Off
+        reduceMotion -> MotionMode.Reduced
+        else -> MotionMode.Full
+    }
     MaterialTheme(
         colorScheme = if (dark) howlDarkColors else howlLightColors,
         typography = HowlTypography,
         shapes = HowlShapes,
     ) {
-        CompositionLocalProvider(LocalReduceMotion provides reduceMotion) {
+        CompositionLocalProvider(LocalMotionMode provides motion) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,

@@ -115,11 +115,14 @@ class EngineApiInstrumentation : Instrumentation() {
             val blocks = after.callbackCount - before.callbackCount
             check(blocks > 0)
             report += "\nanalysis=$enabled callbacks=$blocks underruns=${after.underrunCount - before.underrunCount}"
-            val levels = engine.analysis()
             if (enabled) {
-                check(levels.peak in 0.48f..0.51f && levels.rms in 0.30f..0.41f) { levels.toString() }
+                // Short callbacks can contain only part of a sine cycle.
+                waitFor("sine block with representative peak and RMS") {
+                    val levels = engine.analysis()
+                    levels.peak in 0.48f..0.51f && levels.rms in 0.30f..0.41f
+                }
             } else {
-                check(levels == AnalysisSnapshot.Silent)
+                check(engine.analysis() == AnalysisSnapshot.Silent)
             }
         }
         engine.ok(engine.setAnalysisEnabled(true), "reenable analysis")

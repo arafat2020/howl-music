@@ -2,7 +2,6 @@ package com.howl.music.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,7 +18,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import com.howl.music.ui.theme.HowlSpacing
-import com.howl.music.ui.theme.LocalReduceMotion
+import com.howl.music.ui.theme.HowlMotion
+import com.howl.music.ui.theme.LocalMotionMode
+import com.howl.music.ui.theme.MotionMode
 
 @Composable
 fun HowlListRow(
@@ -33,7 +34,7 @@ fun HowlListRow(
     val colors = MaterialTheme.colorScheme
     val background by animateColorAsState(
         targetValue = if (selected) colors.primaryContainer else colors.surfaceContainer,
-        animationSpec = if (LocalReduceMotion.current) snap() else tween(160),
+        animationSpec = if (LocalMotionMode.current == MotionMode.Full) HowlMotion.fade() else snap(),
         label = "Row selection",
     )
     val foreground = if (selected) colors.onPrimaryContainer else colors.onSurface

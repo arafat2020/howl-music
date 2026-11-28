@@ -19,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,8 @@ import com.howl.music.media.PlaybackQueue.Action
 import com.howl.music.ui.components.AlbumArt
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.theme.HowlSpacing
+import com.howl.music.ui.theme.LocalMotionMode
+import com.howl.music.ui.theme.MotionMode
 
 internal data class QueueTrack(val id: String, val title: String, val artist: String?, val uri: String?)
 
@@ -51,21 +54,24 @@ internal data class QueueUiState(
 @Composable
 internal fun QueueScreen(state: QueueUiState, onBack: () -> Unit, onEdit: (Action, String, String) -> Unit) {
     val list = rememberLazyListState()
+    val fullMotion = LocalMotionMode.current == MotionMode.Full
     val latest by rememberUpdatedState(state)
     val edit by rememberUpdatedState(onEdit)
     var draggedId by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
+    val targetId by remember {
+        derivedStateOf {
+            val id = draggedId ?: return@derivedStateOf null
+            val visible = list.layoutInfo.visibleItemsInfo
+            val source = visible.firstOrNull { it.key == id } ?: return@derivedStateOf null
+            val center = source.offset + source.size / 2 + dragOffset
+            val candidate = visible.firstOrNull { center >= it.offset && center <= it.offset + it.size }?.key
+            latest.upcoming.firstOrNull { it.id == candidate }?.id
+        }
+    }
     fun finishDrag(commit: Boolean) {
         val id = draggedId
-        val visible = list.layoutInfo.visibleItemsInfo
-        val source = visible.firstOrNull { it.key == id }
-        val upcomingIds = latest.upcoming.map { it.id }.toSet()
-        val target = source?.let {
-            val center = it.offset + it.size / 2 + dragOffset
-            visible.firstOrNull { row ->
-                row.key in upcomingIds && center >= row.offset && center <= row.offset + row.size
-            }?.key as? String
-        }
+        val target = targetId
         if (commit && id != null && target != null && target != id) edit(Action.MoveTo, id, target)
         draggedId = null
         dragOffset = 0f
@@ -109,9 +115,13 @@ internal fun QueueScreen(state: QueueUiState, onBack: () -> Unit, onEdit: (Actio
             val dragging = draggedId == track.id
             Surface(
                 modifier = Modifier.zIndex(if (dragging) 1f else 0f)
-                    .graphicsLayer { translationY = if (dragging) dragOffset else 0f },
+                    .graphicsLayer { translationY = if (dragging && fullMotion) dragOffset else 0f },
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainer,
+                color = when {
+                    !fullMotion && targetId == track.id -> MaterialTheme.colorScheme.primaryContainer
+                    dragging && !fullMotion -> MaterialTheme.colorScheme.surfaceContainerHighest
+                    else -> MaterialTheme.colorScheme.surfaceContainer
+                },
             ) {
                 QueueRow(
                     track = track,

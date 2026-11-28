@@ -1,9 +1,5 @@
 package com.howl.music.ui.visualizer
 
-import android.database.ContentObserver
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,11 +16,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -35,7 +29,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,7 +40,8 @@ import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.player.PlaybackUiState
 import com.howl.music.ui.theme.HowlSpacing
-import com.howl.music.ui.theme.LocalReduceMotion
+import com.howl.music.ui.theme.LocalMotionMode
+import com.howl.music.ui.theme.MotionMode
 import kotlinx.coroutines.delay
 import kotlin.math.log10
 import kotlin.math.roundToInt
@@ -64,7 +58,7 @@ internal fun VisualizerScreen(
     onBack: () -> Unit,
 ) {
     var style by rememberSaveable { mutableStateOf(Style.Pulse) }
-    val reducedMotion = LocalReduceMotion.current || !systemAnimationsEnabled()
+    val reducedMotion = LocalMotionMode.current != MotionMode.Full
     val owner = LocalLifecycleOwner.current
     val read by rememberUpdatedState(readAnalysis)
     val animate = playback.isPlaying && !reducedMotion
@@ -188,25 +182,4 @@ private fun displayLevel(level: Float): Float {
     val fraction = ((20f * log10(level) + 48f) / 48f).coerceIn(0f, 1f)
     // Skip redraws when a level changes by less than a display step.
     return (fraction * 64f).roundToInt() / 64f
-}
-
-@Composable
-private fun systemAnimationsEnabled(): Boolean {
-    val resolver = LocalContext.current.contentResolver
-    fun animationsEnabled() =
-        Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
-    var enabled by remember(resolver) { mutableStateOf(animationsEnabled()) }
-    DisposableEffect(resolver) {
-        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                enabled = animationsEnabled()
-            }
-        }
-        resolver.registerContentObserver(
-            Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer,
-        )
-        enabled = animationsEnabled()
-        onDispose { resolver.unregisterContentObserver(observer) }
-    }
-    return enabled
 }

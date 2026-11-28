@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
                     onSeek = ::seek,
                     onSkipBack = { skip(back = true) },
                     onSkipForward = { skip(back = false) },
+                    reduceMotionPreference = reduceMotion,
                     onReduceMotionChange = { enabled -> lifecycleScope.launch { preferences.setReducedMotion(enabled) } },
                     readPositionMs = { player.value?.currentPosition ?: 0L },
                     debugTools = if (BuildConfig.DEBUG) {
