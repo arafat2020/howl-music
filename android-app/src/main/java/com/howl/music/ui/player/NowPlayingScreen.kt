@@ -105,13 +105,13 @@ internal fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.spacedBy(HowlSpacing.Small),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                HowlButton("−5 s", onSkipBack,
-                    modifier = Modifier.weight(1f).semantics { contentDescription = "Skip back 5 seconds" },
+                HowlButton(if (playback.hasPreviousTrack) "Previous" else "−5 s", onSkipBack,
+                    modifier = Modifier.weight(1f).semantics { contentDescription = if (playback.hasPreviousTrack) "Previous track" else "Skip back 5 seconds" },
                     enabled = playback.canSkipBack, primary = false)
                 HowlButton(if (playback.playRequested) "Pause" else "Play", onToggle,
                     modifier = Modifier.weight(1.15f), enabled = playback.canToggle)
-                HowlButton("+15 s", onSkipForward,
-                    modifier = Modifier.weight(1f).semantics { contentDescription = "Skip forward 15 seconds" },
+                HowlButton(if (playback.hasNextTrack) "Next" else "+15 s", onSkipForward,
+                    modifier = Modifier.weight(1f).semantics { contentDescription = if (playback.hasNextTrack) "Next track" else "Skip forward 15 seconds" },
                     enabled = playback.canSkipForward, primary = false)
             }
         }

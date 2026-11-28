@@ -17,10 +17,14 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,7 +35,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.howl.music.ui.components.HowlButton
+import com.howl.music.media.PlaybackQueue.Action
+import com.howl.music.ui.queue.QueueScreen
+import com.howl.music.ui.queue.QueueUiState
 import com.howl.music.data.db.LibraryRow
 import com.howl.music.ui.library.LibraryScreen
 import com.howl.music.ui.eq.EqualizerScreen
@@ -58,6 +64,11 @@ internal fun HowlNavHost(
     equalizer: EqualizerViewModel,
     onToggle: () -> Unit,
     onPlayTrack: (LibraryRow) -> Unit,
+    onPlayNext: (LibraryRow) -> Unit,
+    queue: QueueUiState,
+    queueMessage: String?,
+    onQueueMessageShown: () -> Unit,
+    onQueueEdit: (Action, String, String) -> Unit,
     onScan: () -> Unit,
     onSeek: (String, Long) -> Unit,
     onSkipBack: () -> Unit,
@@ -69,7 +80,15 @@ internal fun HowlNavHost(
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route ?: Tab.Library.route
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(queueMessage) {
+        if (queueMessage != null) {
+            snackbar.showSnackbar(queueMessage)
+            onQueueMessageShown()
+        }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (route != NOW_PLAYING && route != QUEUE) {
                 Column {
@@ -100,7 +119,7 @@ internal fun HowlNavHost(
             exitTransition = { ExitTransition.None },
         ) {
             composable(Tab.Library.route) {
-                LibraryScreen(onPlay = onPlayTrack, onScan = onScan)
+                LibraryScreen(onPlay = onPlayTrack, onPlayNext = onPlayNext, onScan = onScan)
             }
             composable(Tab.Equalizer.route) {
                 EqualizerScreen(equalizer)
@@ -133,11 +152,7 @@ internal fun HowlNavHost(
                 )
             }
             composable(QUEUE) {
-                Destination("Queue") {
-                    HowlButton("Back", { nav.popBackStack() }, primary = false)
-                    playback.title?.let { Text("Now playing · $it") }
-                    Text("No upcoming tracks")
-                }
+                QueueScreen(queue, onBack = { nav.popBackStack() }, onEdit = onQueueEdit)
             }
         }
     }

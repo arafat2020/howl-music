@@ -3,7 +3,7 @@
 **Milestone:** 6 — Visual product  
 **Priority:** Foundational  
 **Depends on:** 6.2, 2.5  
-**Status:** Not started
+**Status:** Implemented
 
 ## Objective
 
@@ -16,11 +16,16 @@ Queue management is a success criterion. Direct manipulation should feel stable,
 ## Architecture
 
 ```text
-QueueViewModel ↔ MediaSession queue / engine queue commands
-LazyColumn + reorder gestures
+Queue screen ← MediaController timeline ← service-owned playlist
+Queue actions → same-app MediaSession commands → playlist → native playback
+LazyColumn + drag handles and accessible move actions
 ```
 
-Pick a single authority mapping (document): prefer session queue mirrored from domain that commands engine.
+The Media3 player in the playback service owns the ordered entries and current position. The native engine renders the selected file. The same order drives Now Playing, the Queue screen, media transport, and automatic advancement at end of track. The UI renders a controller snapshot and submits edits by entry ID. Duplicate files get distinct IDs.
+
+Use **Play next** in Library to insert after the current track. With an empty queue, this selects the track and leaves playback paused. Tapping a library track starts it and preserves the upcoming entries. In Queue, drag a handle or use the row’s move actions. **Play now** pulls the selected track forward and keeps the other upcoming tracks. Removing the current track advances to the next entry while preserving play or pause. Removing the final current track empties the queue.
+
+Now Playing skips tracks when available and falls back to time skips. The session retains completed entries for previous-track navigation. Library files are staged on a background worker before insertion. Insertion resolves against the latest current entry after staging finishes.
 
 ## Learning objectives
 
@@ -64,15 +69,15 @@ android-app/.../ui/queue/QueueScreen.kt
 
 ## Acceptance criteria
 
-- [ ] Queue mirrors playback order.
-- [ ] Reorder/remove/play-next work.
-- [ ] Current track highlighted.
-- [ ] Design remains readable/clean.
+- [x] Queue mirrors playback order.
+- [x] Reorder/remove/play-next work.
+- [x] Current track highlighted.
+- [x] Design remains readable/clean.
 
 ## Review checklist
 
-- [ ] Authority for queue clearly documented.
-- [ ] Empty queue state handled.
+- [x] Authority for queue clearly documented.
+- [x] Empty queue state handled.
 
 ## Potential pitfalls
 
@@ -83,12 +88,12 @@ android-app/.../ui/queue/QueueScreen.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Current and upcoming tracks, drag reorder, accessible move actions, removal, Play next, Play now, and queue-aware transport. |
+| Files created/modified | Queue screen, Library and Now Playing integration, MediaSession playlist and edit commands, and playback instrumentation. |
+| Tests executed | Android build and JVM tests, Android instrumentation, 62 JUCE-enabled host tests, and an emulator smoke test with four MediaStore tracks. |
+| Results | Drag reorder changed the next track, Next followed the edited order, and removing the current track advanced while playback continued. Play now and the empty state worked on the emulator. Instrumentation also checked removal while paused and end-of-track advancement after Play now. |
+| Known limitations | Queue order and history live for the playback service lifetime. Drag targets are limited to visible rows. Staged tracks and history use temporary cache space. Track changes can have a playback gap. |
+| Decisions made | Use one service-owned Media3 playlist. Keep entry identities stable across reorder and duplicate tracks. Stage files before insertion and release the staged sources when their entries are removed or the service ends. |
 | Next phase | 7.1 analysis feed (optional) or 7.3 / 8.x hardening |
 
 **Approval required before next phase.**

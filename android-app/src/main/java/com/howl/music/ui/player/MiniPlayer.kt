@@ -24,6 +24,8 @@ internal data class PlaybackUiState(
     val mediaId: String? = null,
     val artist: String? = null,
     val durationMs: Long = 0,
+    val hasPreviousTrack: Boolean = false,
+    val hasNextTrack: Boolean = false,
     val canSkipBack: Boolean = false,
     val canSkipForward: Boolean = false,
     val title: String? = null,

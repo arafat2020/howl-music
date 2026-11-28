@@ -9,15 +9,20 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionResult
 import com.howl.music.data.db.LibraryRow
 import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.prefs.PreferencesRepository
 import com.howl.music.media.HowlPlaybackService
+import com.howl.music.media.PlaybackQueue
+import com.howl.music.ui.queue.QueueTrack
+import com.howl.music.ui.queue.QueueUiState
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.debug.ArtworkPreviewActivity
 import com.howl.music.ui.debug.ComponentGalleryActivity
@@ -35,6 +40,8 @@ class MainActivity : ComponentActivity() {
     private val preferences by lazy { PreferencesRepository(database) }
     private var connection: PlayerController? = null
     private val player = mutableStateOf<MediaController?>(null)
+    private val queue = mutableStateOf(QueueUiState())
+    private val queueMessage = mutableStateOf<String?>(null)
     private val playback = mutableStateOf(PlaybackUiState())
     private var pendingMediaId: String? = null
     private val pendingDiagnostics = mutableStateOf(false)
@@ -56,10 +63,15 @@ class MainActivity : ComponentActivity() {
                     equalizer = equalizer,
                     onToggle = ::togglePlayback,
                     onPlayTrack = ::playTrack,
+                    onPlayNext = { queueTrack(it, PlaybackQueue.Action.AddNext) },
+                    queue = queue.value,
+                    queueMessage = queueMessage.value,
+                    onQueueMessageShown = { queueMessage.value = null },
+                    onQueueEdit = ::editQueue,
                     onScan = { startActivity(Intent(this, ScanActivity::class.java)) },
                     onSeek = ::seek,
-                    onSkipBack = { player.value?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_BACK) }?.seekBack() },
-                    onSkipForward = { player.value?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_FORWARD) }?.seekForward() },
+                    onSkipBack = { skip(back = true) },
+                    onSkipForward = { skip(back = false) },
                     onReduceMotionChange = { enabled -> lifecycleScope.launch { preferences.setReducedMotion(enabled) } },
                     readPositionMs = { player.value?.currentPosition ?: 0L },
                     debugTools = if (BuildConfig.DEBUG) {
@@ -88,8 +100,9 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         player.value?.removeListener(listener)
         player.value = null
+        queue.value = queue.value.copy(canEdit = false)
         playback.value = playback.value.copy(
-            canToggle = false, canSeek = false, canSkipBack = false, canSkipForward = false, isPlaying = false,
+            canToggle = false, canSeek = false, canSkipBack = false, canSkipForward = false, hasPreviousTrack = false, hasNextTrack = false, isPlaying = false,
         )
         pendingMediaId = null
         pendingDiagnostics.value = false
@@ -123,6 +136,7 @@ class MainActivity : ComponentActivity() {
     private fun onPlaybackUnavailable(message: String) {
         equalizer.connect(null)
         player.value = null
+        queue.value = queue.value.copy(canEdit = false)
         pendingMediaId = null
         pendingDiagnostics.value = false
         playback.value = PlaybackUiState(status = message)
@@ -141,15 +155,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun playTrack(track: LibraryRow) {
-        val controller = player.value ?: return
+    private fun playTrack(track: LibraryRow) = queueTrack(track, PlaybackQueue.Action.AddNow)
+
+    private fun queueTrack(track: LibraryRow, action: PlaybackQueue.Action) {
         val uri = track.uri ?: return
         val item = MediaItem.Builder()
-            .setMediaId(uri)
             .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(Uri.parse(uri)).build())
             .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).build())
             .build()
-        selectMedia(controller, item)
+        sendQueueEdit(action, Bundle().apply { putBundle(PlaybackQueue.MEDIA, item.toBundle()) })
+    }
+
+    private fun editQueue(action: PlaybackQueue.Action, id: String, target: String) {
+        sendQueueEdit(action, Bundle().apply {
+            putString(PlaybackQueue.ENTRY_ID, id)
+            putString(PlaybackQueue.TARGET_ID, target)
+        })
+    }
+
+    private fun sendQueueEdit(action: PlaybackQueue.Action, args: Bundle) {
+        val controller = player.value
+        if (controller == null || !controller.isSessionCommandAvailable(PlaybackQueue.edit)) {
+            queueMessage.value = "Playback is unavailable."
+            return
+        }
+        args.putString(PlaybackQueue.ACTION, action.name)
+        val future = controller.sendCustomCommand(PlaybackQueue.edit, args)
+        future.addListener({
+            if (player.value === controller) {
+                val result = runCatching { future.get() }.getOrNull()
+                if (result?.resultCode != SessionResult.RESULT_SUCCESS) {
+                    queueMessage.value = "Couldn’t update the queue."
+                }
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun skip(back: Boolean) {
+        val controller = player.value ?: return
+        if (back) {
+            if (controller.hasPreviousMediaItem() &&
+                controller.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            ) controller.seekToPreviousMediaItem()
+            else if (controller.isCommandAvailable(Player.COMMAND_SEEK_BACK)) controller.seekBack()
+        } else {
+            if (controller.hasNextMediaItem() &&
+                controller.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            ) controller.seekToNextMediaItem()
+            else if (controller.isCommandAvailable(Player.COMMAND_SEEK_FORWARD)) controller.seekForward()
+        }
     }
 
     private fun selectMedia(controller: MediaController, item: MediaItem) {
@@ -196,12 +250,34 @@ class MainActivity : ComponentActivity() {
     private fun updatePlayer(player: Player) {
         val item = player.currentMediaItem
         val readyForCommands = pendingMediaId == null && !pendingDiagnostics.value
+        val currentIndex = player.currentMediaItemIndex
+        fun queueTrackAt(index: Int): QueueTrack {
+            val track = player.getMediaItemAt(index)
+            return QueueTrack(
+                track.mediaId, track.mediaMetadata.title?.toString() ?: track.mediaId,
+                track.mediaMetadata.artist?.toString(), track.requestMetadata.mediaUri?.toString(),
+            )
+        }
+        val hasTimeline = player.isCommandAvailable(Player.COMMAND_GET_TIMELINE)
+        if (hasTimeline) {
+            queue.value = QueueUiState(
+                current = if (currentIndex in 0 until player.mediaItemCount) queueTrackAt(currentIndex) else null,
+                upcoming = (currentIndex + 1 until player.mediaItemCount).map(::queueTrackAt),
+                canEdit = (player as? MediaController)?.isSessionCommandAvailable(PlaybackQueue.edit) == true,
+            )
+        }
+        val previous = hasTimeline && player.hasPreviousMediaItem() &&
+            player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+        val next = hasTimeline && player.hasNextMediaItem() &&
+            player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
         playback.value = PlaybackUiState(
+            hasPreviousTrack = previous,
+            hasNextTrack = next,
             mediaId = item?.mediaId,
             artist = player.mediaMetadata.artist?.toString(),
             durationMs = player.duration.coerceAtLeast(0L),
-            canSkipBack = readyForCommands && player.isCommandAvailable(Player.COMMAND_SEEK_BACK),
-            canSkipForward = readyForCommands && player.isCommandAvailable(Player.COMMAND_SEEK_FORWARD),
+            canSkipBack = readyForCommands && (previous || player.isCommandAvailable(Player.COMMAND_SEEK_BACK)),
+            canSkipForward = readyForCommands && (next || player.isCommandAvailable(Player.COMMAND_SEEK_FORWARD)),
             title = item?.let { player.mediaMetadata.title?.toString() ?: it.mediaId },
             artworkTrackUri = (item?.requestMetadata?.mediaUri ?: item?.localConfiguration?.uri)?.toString(),
             status = player.playerError?.message ?: when {

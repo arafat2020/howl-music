@@ -31,6 +31,7 @@ import com.howl.music.data.scan.verifyLibraryScan
 import com.howl.music.media.HowlMedia3Player
 import com.howl.music.media.HowlPlaybackService
 import com.howl.music.media.PlaybackEqualizer
+import com.howl.music.media.PlaybackQueue
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -347,9 +348,65 @@ class EngineApiInstrumentation : Instrumentation() {
                 controller.setMediaItem(MediaItem.EMPTY)
             }
             waitFor("library source released") { onMain { controller.mediaItemCount == 0 } }
+            verifySessionQueue(controller, item)
         } finally {
             resolver.delete(uri, null, null)
         }
+    }
+
+    private fun verifySessionQueue(controller: MediaController, source: MediaItem) {
+        fun edit(action: PlaybackQueue.Action, title: String = "", id: String = "", target: String = "") {
+            val args = Bundle().apply {
+                putString(PlaybackQueue.ACTION, action.name)
+                putString(PlaybackQueue.ENTRY_ID, id)
+                putString(PlaybackQueue.TARGET_ID, target)
+                if (title.isNotEmpty()) {
+                    val track = source.buildUpon()
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+                        .build()
+                    putBundle(PlaybackQueue.MEDIA, track.toBundle())
+                }
+            }
+            val result = onMain { controller.sendCustomCommand(PlaybackQueue.edit, args) }.get(5, TimeUnit.SECONDS)
+            check(result.resultCode == SessionResult.RESULT_SUCCESS) { "$action returned ${result.resultCode}" }
+        }
+
+        fun track(title: String): String = onMain {
+            (0 until controller.mediaItemCount).map(controller::getMediaItemAt)
+                .single { it.mediaMetadata.title?.toString() == title }.mediaId
+        }
+
+        fun current(title: String) {
+            waitFor("queue current item $title") { onMain { controller.mediaMetadata.title?.toString() == title } }
+        }
+
+        edit(PlaybackQueue.Action.AddNext, title = "First")
+        current("First")
+        onMain { controller.repeatMode = Player.REPEAT_MODE_OFF }
+        edit(PlaybackQueue.Action.AddNext, title = "Second")
+        edit(PlaybackQueue.Action.AddNext, title = "Third")
+        edit(PlaybackQueue.Action.AddNext, title = "Fourth")
+        edit(PlaybackQueue.Action.MoveTo, id = track("Second"), target = track("Fourth"))
+        waitFor("reordered upcoming tracks") {
+            onMain {
+                (0 until controller.mediaItemCount).map {
+                    controller.getMediaItemAt(it).mediaMetadata.title?.toString()
+                } == listOf("First", "Second", "Fourth", "Third")
+            }
+        }
+        onMain { controller.seekToNextMediaItem() }
+        current("Second")
+        edit(PlaybackQueue.Action.Remove, id = track("Third"))
+        edit(PlaybackQueue.Action.Remove, id = track("Second"))
+        current("Fourth")
+        check(onMain { !controller.playWhenReady })
+        edit(PlaybackQueue.Action.AddNext, title = "Play now")
+        edit(PlaybackQueue.Action.AddNext, title = "At EOF")
+        edit(PlaybackQueue.Action.Play, id = track("Play now"))
+        current("Play now")
+        current("At EOF")
+        edit(PlaybackQueue.Action.Remove, id = track("At EOF"))
+        waitFor("queue empty after final removal") { onMain { controller.mediaItemCount == 0 } }
     }
 
     private fun verifyAudioFocus(controller: MediaController) {

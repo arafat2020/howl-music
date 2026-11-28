@@ -23,6 +23,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -37,6 +39,7 @@ import com.howl.music.ui.theme.HowlSpacing
 @Composable
 internal fun LibraryScreen(
     onPlay: (LibraryRow) -> Unit,
+    onPlayNext: (LibraryRow) -> Unit,
     onScan: () -> Unit,
     model: LibraryViewModel = viewModel(),
 ) {
@@ -113,7 +116,7 @@ internal fun LibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(HowlSpacing.ExtraSmall),
                         ) {
                             items(data.rows, key = { it.id }) { row ->
-                                LibraryItem(row, showsTracks, if (showsTracks) onPlay else model::openGroup)
+                                LibraryItem(row, if (showsTracks) onPlayNext else null, if (showsTracks) onPlay else model::openGroup)
                             }
                             if (data.hasMore) item { HowlButton("Load more", model::loadMore, primary = false) }
                         }
@@ -125,10 +128,10 @@ internal fun LibraryScreen(
 }
 
 @Composable
-private fun LibraryItem(row: LibraryRow, showsTracks: Boolean, onClick: (LibraryRow) -> Unit) {
+private fun LibraryItem(row: LibraryRow, onPlayNext: ((LibraryRow) -> Unit)?, onClick: (LibraryRow) -> Unit) {
     Row(
         Modifier.fillMaxWidth()
-            .clickable(onClickLabel = if (showsTracks) "Play" else "Browse") { onClick(row) }
+            .clickable(onClickLabel = if (onPlayNext != null) "Play" else "Browse") { onClick(row) }
             .padding(vertical = HowlSpacing.ExtraSmall),
         horizontalArrangement = Arrangement.spacedBy(HowlSpacing.Medium),
         verticalAlignment = Alignment.CenterVertically,
@@ -142,6 +145,14 @@ private fun LibraryItem(row: LibraryRow, showsTracks: Boolean, onClick: (Library
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (!showsTracks) Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (onPlayNext == null) {
+            Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            HowlButton(
+                "Play next", { onPlayNext(row) },
+                modifier = Modifier.semantics { contentDescription = "Play ${row.title} next" },
+                primary = false,
+            )
+        }
     }
 }

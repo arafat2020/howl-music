@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -15,6 +16,7 @@ import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.google.common.util.concurrent.SettableFuture
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -91,6 +93,7 @@ class HowlPlaybackService : MediaSessionService() {
                 val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                     .add(PlaybackEqualizer.read)
                     .add(PlaybackEqualizer.apply)
+                    .add(PlaybackQueue.edit)
                     .build()
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(commands)
@@ -103,6 +106,7 @@ class HowlPlaybackService : MediaSessionService() {
                     Player.COMMAND_PLAY_PAUSE, Player.COMMAND_PREPARE, Player.COMMAND_STOP,
                     Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
                     Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
                     Player.COMMAND_GET_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_TIMELINE,
                     Player.COMMAND_GET_METADATA,
                 )
@@ -122,6 +126,7 @@ class HowlPlaybackService : MediaSessionService() {
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_PERMISSION_DENIED))
             }
             val player = session.player as HowlMedia3Player
+            if (customCommand == PlaybackQueue.edit) return handleQueueEdit(player, args)
             val result = when (customCommand) {
                 PlaybackEqualizer.read -> SessionResult(SessionResult.RESULT_SUCCESS, player.equalizer.toBundle())
                 PlaybackEqualizer.apply -> {
@@ -149,17 +154,59 @@ class HowlPlaybackService : MediaSessionService() {
                 requested == MediaItem.EMPTY -> Futures.immediateFuture(listOf(MediaItem.EMPTY))
                 requested.mediaId == SAMPLE_MEDIA_ID -> Futures.immediateFuture(listOf(loadSample()))
                 else -> {
-                    val uri = requested.requestMetadata.mediaUri
-                    val parts = uri?.pathSegments.orEmpty()
-                    require(uri?.scheme == "content" && uri.authority == "media" &&
-                        parts.size == 4 && parts[1] == "audio" && parts[2] == "media" &&
-                        parts[3].toLongOrNull()?.let { it > 0 } == true
-                    ) { "Expected an indexed MediaStore audio item" }
+                    val uri = requireNotNull(indexedTrackUri(requested))
                     sourceExecutor.submit<List<MediaItem>> { listOf(stageTrack(requested, uri)) }
                 }
             }
         } catch (failure: Exception) {
             Futures.immediateFailedFuture(failure)
+        }
+    }
+
+    private fun handleQueueEdit(player: HowlMedia3Player, args: Bundle): ListenableFuture<SessionResult> {
+        val action = PlaybackQueue.Action.entries.firstOrNull { it.name == args.getString(PlaybackQueue.ACTION) }
+            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+        if (action != PlaybackQueue.Action.AddNext && action != PlaybackQueue.Action.AddNow) {
+            val id = args.getString(PlaybackQueue.ENTRY_ID).orEmpty()
+            val target = args.getString(PlaybackQueue.TARGET_ID).orEmpty()
+            return Futures.immediateFuture(queueResult(id.isNotEmpty() && player.editQueue(action, id, target)))
+        }
+
+        val requested = args.getBundle(PlaybackQueue.MEDIA)?.let(MediaItem::fromBundle)
+            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+        val uri = indexedTrackUri(requested)
+            ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+        val entry = requested.buildUpon().setMediaId(UUID.randomUUID().toString()).build()
+        // Apply to the current queue when staging completes. No stale insertion index crosses threads.
+        val result = SettableFuture.create<SessionResult>()
+        val mainExecutor = ContextCompat.getMainExecutor(this)
+        sourceExecutor.execute {
+            if (!result.isCancelled) {
+                val media = stageTrack(entry, uri)
+                mainExecutor.execute {
+                    val localUri = media.localConfiguration?.uri
+                    if (localUri?.scheme == "file" && !destroying && !result.isCancelled && session?.player === player) {
+                        result.set(queueResult(player.editQueue(action, media = media)))
+                    } else {
+                        if (localUri?.scheme == "file" && !destroying) discardSource(localUri)
+                        result.set(SessionResult(SessionResult.RESULT_ERROR_IO))
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private fun queueResult(accepted: Boolean) =
+        SessionResult(if (accepted) SessionResult.RESULT_SUCCESS else SessionResult.RESULT_ERROR_INVALID_STATE)
+
+    private fun indexedTrackUri(item: MediaItem): Uri? {
+        val uri = item.requestMetadata.mediaUri ?: return null
+        val parts = uri.pathSegments
+        return uri.takeIf {
+            it.scheme == "content" && it.authority == "media" && parts.size == 4 &&
+                parts[1] == "audio" && parts[2] == "media" &&
+                parts[3].toLongOrNull()?.let { id -> id > 0 } == true
         }
     }
 
