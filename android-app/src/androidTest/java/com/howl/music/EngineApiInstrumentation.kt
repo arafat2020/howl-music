@@ -19,6 +19,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
@@ -29,6 +30,7 @@ import com.howl.music.data.writeUserData
 import com.howl.music.data.scan.verifyLibraryScan
 import com.howl.music.media.HowlMedia3Player
 import com.howl.music.media.HowlPlaybackService
+import com.howl.music.media.PlaybackEqualizer
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -234,6 +236,7 @@ class EngineApiInstrumentation : Instrumentation() {
                     first.play()
                 }
                 waitFor("service playback") { onMain { first.isPlaying } }
+                verifySessionEqualizer(first)
                 verifyAudioFocus(first)
             } finally {
                 onMain { first.release() }
@@ -267,6 +270,40 @@ class EngineApiInstrumentation : Instrumentation() {
             }
         } finally {
             onMain { if (!activity.isDestroyed) activity.finish() }
+        }
+    }
+
+    private fun verifySessionEqualizer(controller: MediaController) {
+        fun read(): PlaybackEqualizer.Settings {
+            val response = onMain { controller.sendCustomCommand(PlaybackEqualizer.read, Bundle.EMPTY) }
+                .get(5, TimeUnit.SECONDS)
+            check(response.resultCode == SessionResult.RESULT_SUCCESS)
+            return checkNotNull(PlaybackEqualizer.readSettings(response.extras))
+        }
+
+        fun apply(settings: PlaybackEqualizer.Settings) {
+            val response = onMain {
+                controller.sendCustomCommand(PlaybackEqualizer.apply, settings.toBundle())
+            }.get(5, TimeUnit.SECONDS)
+            check(response.resultCode == SessionResult.RESULT_SUCCESS)
+        }
+
+        val original = read()
+        val changed = PlaybackEqualizer.Settings(EqState(-6f, FloatArray(EqState.BAND_COUNT) { it - 4f }))
+        try {
+            apply(changed)
+            check(read().let { it.enabled && it.gains.preampDb == -6f &&
+                it.gains.bandsDb.contentEquals(changed.gains.bandsDb) })
+            apply(changed.copy(enabled = false))
+            check(read().let { !it.enabled && it.gains.bandsDb.contentEquals(changed.gains.bandsDb) })
+            apply(changed)
+            val invalid = onMain {
+                controller.sendCustomCommand(PlaybackEqualizer.apply, Bundle.EMPTY)
+            }.get(5, TimeUnit.SECONDS)
+            check(invalid.resultCode == SessionResult.RESULT_ERROR_BAD_VALUE)
+            check(read().enabled && onMain { controller.isPlaying })
+        } finally {
+            apply(original)
         }
     }
 

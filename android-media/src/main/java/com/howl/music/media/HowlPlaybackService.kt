@@ -2,6 +2,7 @@ package com.howl.music.media
 
 import android.app.PendingIntent
 import android.net.Uri
+import android.os.Bundle
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -9,6 +10,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -84,7 +87,15 @@ class HowlPlaybackService : MediaSessionService() {
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
-            if (controller.uid == applicationInfo.uid) return super.onConnect(session, controller)
+            if (controller.uid == applicationInfo.uid) {
+                val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                    .add(PlaybackEqualizer.read)
+                    .add(PlaybackEqualizer.apply)
+                    .build()
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(commands)
+                    .build()
+            }
             if (!controller.isTrusted) return MediaSession.ConnectionResult.reject()
 
             val transportCommands = Player.Commands.Builder()
@@ -99,6 +110,32 @@ class HowlPlaybackService : MediaSessionService() {
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailablePlayerCommands(transportCommands)
                 .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (controller.uid != applicationInfo.uid) {
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_PERMISSION_DENIED))
+            }
+            val player = session.player as HowlMedia3Player
+            val result = when (customCommand) {
+                PlaybackEqualizer.read -> SessionResult(SessionResult.RESULT_SUCCESS, player.equalizer.toBundle())
+                PlaybackEqualizer.apply -> {
+                    val settings = PlaybackEqualizer.readSettings(args)
+                    when {
+                        settings == null -> SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE)
+                        player.applyEqualizer(settings) ->
+                            SessionResult(SessionResult.RESULT_SUCCESS, player.equalizer.toBundle())
+                        else -> SessionResult(SessionResult.RESULT_ERROR_UNKNOWN)
+                    }
+                }
+                else -> return super.onCustomCommand(session, controller, customCommand, args)
+            }
+            return Futures.immediateFuture(result)
         }
 
         override fun onAddMediaItems(

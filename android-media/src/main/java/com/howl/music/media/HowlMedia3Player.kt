@@ -30,6 +30,18 @@ class HowlMedia3Player internal constructor(
         verifyApplicationThread()
         HowlEngine.create()
     }
+    internal var equalizer = PlaybackEqualizer.Settings()
+        private set
+
+    internal fun applyEqualizer(settings: PlaybackEqualizer.Settings): Boolean {
+        verifyApplicationThread()
+        // The native engine publishes one complete state and smooths the transition.
+        val status = if (settings.enabled) engine.applyEqState(settings.gains) else engine.resetEqToFlat()
+        if (status != 0) return false
+        equalizer = settings
+        return true
+    }
+
     private val handler = Handler(looper)
     private var item: MediaItem? = null
     private var itemUid: Any = Any()

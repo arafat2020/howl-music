@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -33,6 +34,8 @@ import androidx.navigation.compose.rememberNavController
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.data.db.LibraryRow
 import com.howl.music.ui.library.LibraryScreen
+import com.howl.music.ui.eq.EqualizerScreen
+import com.howl.music.ui.eq.EqualizerViewModel
 import com.howl.music.ui.player.MiniPlayer
 import com.howl.music.ui.player.NowPlayingScreen
 import com.howl.music.ui.theme.LocalReduceMotion
@@ -48,9 +51,11 @@ private enum class Tab(val route: String, val label: String) {
 private const val NOW_PLAYING = "now-playing"
 private const val QUEUE = "queue"
 
+@UnstableApi
 @Composable
 internal fun HowlNavHost(
     playback: PlaybackUiState,
+    equalizer: EqualizerViewModel,
     onToggle: () -> Unit,
     onPlayTrack: (LibraryRow) -> Unit,
     onScan: () -> Unit,
@@ -98,7 +103,7 @@ internal fun HowlNavHost(
                 LibraryScreen(onPlay = onPlayTrack, onScan = onScan)
             }
             composable(Tab.Equalizer.route) {
-                Destination("Equalizer") { Text("Equalizer controls are coming here.") }
+                EqualizerScreen(equalizer)
             }
             composable(Tab.Settings.route) {
                 Destination("Settings") {

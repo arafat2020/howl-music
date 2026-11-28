@@ -5,11 +5,14 @@ import com.howl.music.bridge.HowlEngine
 import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.db.entities.EqBandGains
 import com.howl.music.data.db.entities.EqPresetEntity
+import kotlinx.coroutines.flow.map
 
 data class EqPreset(val id: Long, val name: String, val state: EqState)
 
 class EqPresetRepository(db: HowlDatabase) {
     private val dao = db.eqPresetDao()
+
+    val presets = dao.observeAll().map { rows -> rows.map(::preset) }
 
     suspend fun create(name: String, state: EqState): Long = dao.insert(entity(0, name, state))
 

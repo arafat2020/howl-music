@@ -3,7 +3,7 @@
 **Milestone:** 6 — Visual product  
 **Priority:** Foundational  
 **Depends on:** 6.1, 3.4, 4.1  
-**Status:** Not started
+**Status:** Implemented
 
 ## Objective
 
@@ -16,11 +16,16 @@ EQ is a differentiator for audio enthusiasts and a visually rich surface per the
 ## Architecture
 
 ```text
-EqualizerViewModel
-  reads/writes EqState + preset repository
-  applies to HowlEngine (via service-held engine or bridge API)
-Optional: animated response curve from coefficients (approx OK)
+EqualizerViewModel → Room preset repository
+EqualizerViewModel → app-only MediaSession commands → service-owned HowlEngine
+Gain guide → preamp and band settings
 ```
+
+## Controls and presets
+
+The preamp spans −24 to +12 dB, and each of the ten bands spans −12 to +12 dB. Sliders preview adjustments in half-decibel steps and submit a complete state on release. The ViewModel keeps one apply in flight and coalesces later changes to the latest requested state. The playback service acknowledges the state after the native call succeeds.
+
+Bypass ramps the preamp and bands to zero and keeps the adjusted settings available for re-enabling. The graph plots configured preamp plus band gain at each octave center. Flat resets the gains. Named user presets are stored in Room and can be loaded across restarts.
 
 ## Learning objectives
 
@@ -68,15 +73,15 @@ android-app/.../ui/eq/EqualizerViewModel.kt
 
 ## Acceptance criteria
 
-- [ ] Bands/preamp control engine EQ.
-- [ ] Presets apply and persist.
-- [ ] UI remains responsive during playback.
-- [ ] Processing state visible (enabled/bypass).
+- [x] Bands/preamp control engine EQ.
+- [x] Presets apply and persist.
+- [x] UI remains responsive during playback.
+- [x] Processing state visible (enabled/bypass).
 
 ## Review checklist
 
-- [ ] Update rate to engine is sane.
-- [ ] Accessibility labels on bands.
+- [x] Update rate to engine is sane.
+- [x] Accessibility labels on bands.
 
 ## Potential pitfalls
 
@@ -88,12 +93,12 @@ android-app/.../ui/eq/EqualizerViewModel.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Ten band sliders, preamp, bypass, gain guide, Flat and named presets on the EQ tab. |
+| Files created/modified | Equalizer screen and ViewModel, Room preset queries, MediaSession EQ commands, and playback instrumentation. |
+| Tests executed | Android build and JVM tests, Android instrumentation, JUCE-enabled host tests, and emulator UI checks during playback. |
+| Results | All 62 host tests passed, including frequency response and smooth transitions back to flat. Android instrumentation verified complete EQ updates, bypass and restore, and malformed-command rejection during playback. The emulator restored the saved gains after an app restart and applied a 16 kHz cut while playback continued. |
+| Known limitations | Active gains and bypass live for the playback service lifetime. Named presets persist in Room. The gain guide shows settings at band centers. Listening on physical hardware is pending. |
+| Decisions made | Commit full EQ snapshots on slider release. Keep playback and EQ on the same native engine. Apply bypass through the existing smooth flat transition. |
 | Next phase | 6.6 — Queue UI |
 
 **Approval required before Phase 6.6.**

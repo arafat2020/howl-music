@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.howl.music.data.db.entities.EqPresetEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface EqPresetDao {
@@ -17,6 +18,9 @@ interface EqPresetDao {
 
     @Query("SELECT * FROM eq_presets ORDER BY name, id")
     suspend fun all(): List<EqPresetEntity>
+
+    @Query("SELECT * FROM eq_presets ORDER BY name, id")
+    fun observeAll(): Flow<List<EqPresetEntity>>
 
     @Query("DELETE FROM eq_presets WHERE id = :id")
     suspend fun delete(id: Long): Int

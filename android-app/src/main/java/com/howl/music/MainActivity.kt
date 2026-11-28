@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -21,6 +22,7 @@ import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.debug.ArtworkPreviewActivity
 import com.howl.music.ui.debug.ComponentGalleryActivity
 import com.howl.music.ui.debug.ScanActivity
+import com.howl.music.ui.eq.EqualizerViewModel
 import com.howl.music.ui.theme.HowlTheme
 import com.howl.music.ui.nav.HowlNavHost
 import com.howl.music.ui.player.PlaybackUiState
@@ -28,6 +30,7 @@ import kotlinx.coroutines.launch
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
+    private val equalizer by viewModels<EqualizerViewModel>()
     private val database by lazy { HowlDatabase.open(this) }
     private val preferences by lazy { PreferencesRepository(database) }
     private var connection: PlayerController? = null
@@ -50,6 +53,7 @@ class MainActivity : ComponentActivity() {
             HowlTheme(reduceMotion = reduceMotion) {
                 HowlNavHost(
                     playback = playback.value,
+                    equalizer = equalizer,
                     onToggle = ::togglePlayback,
                     onPlayTrack = ::playTrack,
                     onScan = { startActivity(Intent(this, ScanActivity::class.java)) },
@@ -89,6 +93,7 @@ class MainActivity : ComponentActivity() {
         )
         pendingMediaId = null
         pendingDiagnostics.value = false
+        equalizer.connect(null)
         connection?.close()
         connection = null
         super.onStop()
@@ -110,11 +115,13 @@ class MainActivity : ComponentActivity() {
 
     private fun attachPlayer(controller: MediaController) {
         player.value = controller
+        equalizer.connect(controller)
         controller.addListener(listener)
         updatePlayer(controller)
     }
 
     private fun onPlaybackUnavailable(message: String) {
+        equalizer.connect(null)
         player.value = null
         pendingMediaId = null
         pendingDiagnostics.value = false
