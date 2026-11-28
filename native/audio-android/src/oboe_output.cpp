@@ -22,6 +22,10 @@ namespace howl {
 
 struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
                            public oboe::AudioStreamErrorCallback {
+    explicit Impl(const std::atomic<bool>& enabled) : analysisEnabled(enabled) {}
+
+    const std::atomic<bool>& analysisEnabled;
+    LevelMeter meter;
     std::shared_ptr<oboe::AudioStream> stream;
     SineOsc osc;
     int32_t channels = 2;
@@ -47,12 +51,12 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
         lastFramesPerCallback.store(numFrames, std::memory_order_relaxed);
 
         auto* out = static_cast<float*>(audioData);
+        const auto sampleCount = static_cast<std::size_t>(numFrames) * channels;
+        const bool analyze = analysisEnabled.load(std::memory_order_relaxed);
 
         if (paused.load(std::memory_order_acquire)) {
-            std::memset(
-                out,
-                0,
-                static_cast<size_t>(numFrames) * static_cast<size_t>(channels) * sizeof(float));
+            std::memset(out, 0, sampleCount * sizeof(float));
+            if (analyze) meter.clear();
             return oboe::DataCallbackResult::Continue;
         }
 
@@ -74,6 +78,7 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
             if (activeGraph != nullptr && got > 0) {
                 activeGraph->process(out, got);
             }
+            if (analyze) meter.publish(out, sampleCount);
             return oboe::DataCallbackResult::Continue;
         }
 
@@ -91,6 +96,7 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
                 out[frame * channels + ch] = sample;
             }
         }
+        if (analyze) meter.publish(out, sampleCount);
         return oboe::DataCallbackResult::Continue;
     }
 
@@ -99,7 +105,8 @@ struct AudioOutput::Impl : public oboe::AudioStreamDataCallback,
     }
 };
 
-AudioOutput::AudioOutput() : impl_(std::make_unique<Impl>()) {}
+AudioOutput::AudioOutput(const std::atomic<bool>& analysisEnabled)
+    : impl_(std::make_unique<Impl>(analysisEnabled)) {}
 
 AudioOutput::~AudioOutput() {
     (void)stop();
@@ -138,6 +145,7 @@ Status AudioOutput::start(int32_t requestedSampleRate) {
 
     (void)stop();
 
+    impl_->meter.clear();
     impl_->callbackCount.store(0, std::memory_order_relaxed);
     impl_->lastFramesPerCallback.store(0, std::memory_order_relaxed);
     impl_->underrunCount.store(0, std::memory_order_relaxed);
@@ -217,6 +225,14 @@ Status AudioOutput::stop() {
 
 bool AudioOutput::isRunning() const {
     return impl_->stream && impl_->stream->getState() == oboe::StreamState::Started;
+}
+
+AnalysisSnapshot AudioOutput::analysis() const noexcept {
+    return isPaused() ? AnalysisSnapshot{} : impl_->meter.snapshot();
+}
+
+void AudioOutput::clearAnalysis() noexcept {
+    impl_->meter.clear();
 }
 
 void AudioOutput::copyDiagnostics(EngineDiagnostics& out) const {

@@ -308,7 +308,7 @@ Status Engine::start() {
 
     auto ring = std::make_unique<PcmRingBuffer>(kRingCapacityFrames, kRingChannels);
     auto worker = std::make_unique<DecodeWorker>();
-    auto output = std::make_unique<AudioOutput>();
+    auto output = std::make_unique<AudioOutput>(analysisEnabled_);
     positionFrames_.store(0, std::memory_order_relaxed);
     paused_.store(false, std::memory_order_relaxed);
 
@@ -585,6 +585,28 @@ EngineDiagnostics Engine::diagnostics() const {
     return out;
 }
 
+void Engine::setAnalysisEnabled(bool enabled) {
+#if defined(__ANDROID__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (enabled && !analysisEnabled_.load(std::memory_order_relaxed) && output_) {
+        output_->clearAnalysis();
+    }
+    analysisEnabled_.store(enabled, std::memory_order_relaxed);
+#else
+    (void)enabled;
+#endif
+}
+
+AnalysisSnapshot Engine::analysis() const {
+#if defined(__ANDROID__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (output_ && state_ == EngineState::Running && analysisEnabled_.load(std::memory_order_relaxed)) {
+        return output_->analysis();
+    }
+#endif
+    return {};
+}
+
 const char* Engine::version() {
     return "howl_engine/0.8.0-dsp-graph";
 }
@@ -707,7 +729,7 @@ Status Engine::changeTrack(const std::string& path) {
         if (fmt.sampleRate != output_->sampleRate() ||
             fmt.channelCount != output_->channelCount()) {
             (void)output_->stop();
-            output_ = std::make_unique<AudioOutput>();
+            output_ = std::make_unique<AudioOutput>(analysisEnabled_);
             output_->setOutputMode(OutputMode::Ring, ring_.get());
             output_->setPositionFrames(&positionFrames_);
             const Status outSt = output_->start(fmt.sampleRate);
@@ -1055,6 +1077,26 @@ int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnost
     out->callback_count = snap.callback_count;
     out->underrun_count = snap.underrun_count;
     out->error_count = snap.error_count;
+    return static_cast<int32_t>(howl::Status::Ok);
+}
+
+int32_t howl_engine_set_analysis_enabled(HowlEngineHandle* engine, int32_t enabled) {
+    if (engine == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    if (enabled != 0 && enabled != 1) {
+        return static_cast<int32_t>(howl::Status::InvalidArgument);
+    }
+    reinterpret_cast<howl::Engine*>(engine)->setAnalysisEnabled(enabled != 0);
+    return static_cast<int32_t>(howl::Status::Ok);
+}
+
+int32_t howl_engine_get_analysis(HowlEngineHandle* engine, HowlAnalysisSnapshot* out) {
+    if (engine == nullptr || out == nullptr) {
+        return static_cast<int32_t>(howl::Status::NullHandle);
+    }
+    const auto snapshot = reinterpret_cast<howl::Engine*>(engine)->analysis();
+    *out = {snapshot.peak, snapshot.rms};
     return static_cast<int32_t>(howl::Status::Ok);
 }
 

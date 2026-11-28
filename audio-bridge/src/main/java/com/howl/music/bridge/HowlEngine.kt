@@ -17,6 +17,8 @@ class HowlEngine private constructor(
     private var handle: Long,
 ) : Closeable {
 
+    private val analysisBuffer = FloatArray(2)
+
     enum class PlayMode(val nativeCode: Int) {
         Sine(0),
         File(1),
@@ -113,6 +115,18 @@ class HowlEngine private constructor(
             playing = buf[4] != 0L,
         )
     }
+
+    /** Opt into block-level peak/RMS on this engine. Disabled by default. */
+    fun setAnalysisEnabled(enabled: Boolean): Int =
+        nativeSetAnalysisEnabled(requireHandle(), enabled)
+
+    /** Read on the engine control thread, for example from a foreground UI polling loop. */
+    fun analysis(): AnalysisSnapshot =
+        if (nativeGetAnalysis(requireHandle(), analysisBuffer) == 0) {
+            AnalysisSnapshot(analysisBuffer[0], analysisBuffer[1])
+        } else {
+            AnalysisSnapshot.Silent
+        }
 
     fun diagnostics(): EngineDiagnostics {
         val buf = LongArray(DIAG_FIELDS)
@@ -220,6 +234,8 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeRepeatMode(handle: Long): Int
         @JvmStatic private external fun nativePlayMode(handle: Long): Int
         @JvmStatic private external fun nativeGetTransport(handle: Long, out: LongArray): Int
+        @JvmStatic private external fun nativeSetAnalysisEnabled(handle: Long, enabled: Boolean): Int
+        @JvmStatic private external fun nativeGetAnalysis(handle: Long, out: FloatArray): Int
         @JvmStatic private external fun nativeGetDiagnostics(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeVersion(): String
         @JvmStatic private external fun nativeStatusString(status: Int): String

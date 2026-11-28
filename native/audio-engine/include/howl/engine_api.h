@@ -27,6 +27,12 @@ typedef struct HowlEngineDiagnostics {
     int64_t error_count;
 } HowlEngineDiagnostics;
 
+/** Peak and RMS of the latest output block. Zero when disabled, stopped, or paused. */
+typedef struct HowlAnalysisSnapshot {
+    float peak;
+    float rms;
+} HowlAnalysisSnapshot;
+
 typedef struct HowlEngineOpaque HowlEngineHandle;
 
 HowlEngineHandle* howl_engine_create(void);
@@ -63,6 +69,9 @@ int32_t howl_engine_seek_ms(HowlEngineHandle* engine, int64_t ms);
 int32_t howl_engine_get_transport(HowlEngineHandle* engine, HowlTransportSnapshot* out);
 
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out);
+
+int32_t howl_engine_set_analysis_enabled(HowlEngineHandle* engine, int32_t enabled);
+int32_t howl_engine_get_analysis(HowlEngineHandle* engine, HowlAnalysisSnapshot* out);
 
 const char* howl_engine_version(void);
 const char* howl_engine_status_string(int32_t status);

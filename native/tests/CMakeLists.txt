@@ -25,6 +25,7 @@ add_executable(howl_native_tests
     test_process_graph.cpp
     test_graphic_eq.cpp
     test_eq_state.cpp
+    test_analysis_snapshot.cpp
 )
 
 target_link_libraries(howl_native_tests

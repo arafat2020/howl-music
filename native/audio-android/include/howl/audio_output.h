@@ -1,5 +1,6 @@
 #pragma once
 
+#include "howl/analysis_snapshot.h"
 #include "howl/diagnostics.h"
 #include "howl/status.h"
 
@@ -26,7 +27,7 @@ enum class OutputMode : int32_t {
  */
 class AudioOutput {
 public:
-    AudioOutput();
+    explicit AudioOutput(const std::atomic<bool>& analysisEnabled);
     ~AudioOutput();
 
     AudioOutput(const AudioOutput&) = delete;
@@ -54,6 +55,9 @@ public:
 
     int32_t sampleRate() const { return sampleRate_; }
     int32_t channelCount() const { return channelCount_; }
+
+    AnalysisSnapshot analysis() const noexcept;
+    void clearAnalysis() noexcept;
 
     void copyDiagnostics(EngineDiagnostics& out) const;
 

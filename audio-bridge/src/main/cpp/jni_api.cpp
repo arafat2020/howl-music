@@ -378,6 +378,41 @@ Java_com_howl_music_bridge_HowlEngine_nativeGetDiagnostics(
     return code;
 }
 
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeSetAnalysisEnabled(
+    JNIEnv* env,
+    jclass /* bridge */,
+    jlong handle,
+    jboolean enabled) {
+    return callNative(env, [&] {
+        return howl_engine_set_analysis_enabled(reinterpret_cast<HowlEngineHandle*>(handle), enabled ? 1 : 0);
+    });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeGetAnalysis(
+    JNIEnv* env,
+    jclass /* bridge */,
+    jlong handle,
+    jfloatArray out) {
+    if (out == nullptr) {
+        return static_cast<jint>(howl::Status::NullHandle);
+    }
+    if (env->GetArrayLength(out) < 2) {
+        return static_cast<jint>(howl::Status::InvalidArgument);
+    }
+
+    HowlAnalysisSnapshot snapshot{};
+    const auto code = callNative(env, [&] {
+        return howl_engine_get_analysis(reinterpret_cast<HowlEngineHandle*>(handle), &snapshot);
+    });
+    if (code == 0 && !env->ExceptionCheck()) {
+        const jfloat levels[]{snapshot.peak, snapshot.rms};
+        env->SetFloatArrayRegion(out, 0, 2, levels);
+    }
+    return code;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_howl_music_bridge_HowlEngine_nativeVersion(JNIEnv* env, jclass /* bridge */) {
     return env->NewStringUTF(howl_engine_version());

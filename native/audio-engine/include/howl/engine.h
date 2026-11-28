@@ -1,5 +1,6 @@
 #pragma once
 
+#include "howl/analysis_snapshot.h"
 #include "howl/diagnostics.h"
 #include "howl/dsp/process_graph.h"
 #include "howl/engine_api.h"
@@ -86,6 +87,8 @@ public:
     bool isPaused() const;
     TransportSnapshot transport() const;
     EngineDiagnostics diagnostics() const;
+    void setAnalysisEnabled(bool enabled);
+    AnalysisSnapshot analysis() const;
 
     static const char* version();
 
@@ -121,6 +124,7 @@ private:
 
     std::unique_ptr<PcmRingBuffer> ring_;
     std::unique_ptr<DecodeWorker> worker_;
+    std::atomic<bool> analysisEnabled_{false};
     std::unique_ptr<AudioOutput> output_;
 
     std::thread queueWatchThread_;

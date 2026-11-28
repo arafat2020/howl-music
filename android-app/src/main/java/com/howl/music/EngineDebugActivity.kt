@@ -35,9 +35,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.bridge.EngineDiagnostics
 import com.howl.music.bridge.HowlEngine
 import com.howl.music.bridge.TransportSnapshot
+import com.howl.music.ui.debug.LevelMeters
 import com.howl.music.ui.theme.HowlTheme
 import kotlinx.coroutines.delay
 import java.io.File
@@ -61,6 +63,7 @@ class EngineDebugActivity : ComponentActivity() {
     private val eqBandGainsDb = mutableStateListOf(*Array(eqBandLabels.size) { 0 })
     private var preampGainDb by mutableStateOf(0)
     private var fileMode by mutableStateOf(true)
+    private var levels by mutableStateOf(AnalysisSnapshot.Silent)
     private var diagText by mutableStateOf(EngineDiagnostics.Empty.formatLines())
     private var transportText by mutableStateOf(TransportSnapshot.Empty.formatLine())
     private var queueText by mutableStateOf("queue —")
@@ -72,7 +75,7 @@ class EngineDebugActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         status = HowlEngine.libraryError() ?: try {
-            engine = HowlEngine.create()
+            engine = HowlEngine.create().also { it.setAnalysisEnabled(true) }
             flac440 = copyAsset("sine_440_16bit_stereo.flac")
             flac880 = copyAsset("sine_880_16bit_stereo.flac")
             HowlEngine.version()
@@ -98,7 +101,19 @@ class EngineDebugActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(running, paused) {
+                    if (running && !paused) {
+                        while (true) {
+                            levels = engine?.analysis() ?: AnalysisSnapshot.Silent
+                            delay(50)
+                        }
+                    } else {
+                        levels = AnalysisSnapshot.Silent
+                    }
+                }
+
                 PlayerScreen(
+                    readLevels = { levels },
                     status = status,
                     transport = transportText,
                     queue = queueText,
@@ -309,6 +324,7 @@ class EngineDebugActivity : ComponentActivity() {
 
 @Composable
 private fun PlayerScreen(
+    readLevels: () -> AnalysisSnapshot,
     status: String,
     transport: String,
     queue: String,
@@ -403,6 +419,7 @@ private fun PlayerScreen(
                 Text("Stop")
             }
         }
+        LevelMeters(readLevels, Modifier.padding(vertical = 12.dp))
         Spacer(modifier = Modifier.height(12.dp))
         Row {
             Button(

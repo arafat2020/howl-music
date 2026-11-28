@@ -21,6 +21,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
+import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
 import com.howl.music.data.db.verifyRoomSchema
@@ -64,6 +65,7 @@ class EngineApiInstrumentation : Instrumentation() {
                         verifyLibraryScan(targetContext)
                         writeUserData(targetContext, context)
                         readUserData(targetContext, fixture)
+                        result.putString("analysis", verifyAnalysis())
                         verifyLifecycle(fixture)
                         verifyCloseAndRestart(fixture)
                         verifyMedia3(fixture)
@@ -75,7 +77,7 @@ class EngineApiInstrumentation : Instrumentation() {
                 fixture.delete()
             }
             val summary = persistenceStep?.let { "User data persistence step $it passed." }
-                ?: "Howl engine, playback, audio focus, schema, scan, user data, and artwork checks passed."
+                ?: "Howl engine, analysis, playback, audio focus, schema, scan, user data, and artwork checks passed."
             result.putString("stream", "\n$summary\n")
             Activity.RESULT_OK
         } catch (error: Throwable) {
@@ -83,6 +85,38 @@ class EngineApiInstrumentation : Instrumentation() {
             Activity.RESULT_CANCELED
         }
         finish(status, result)
+    }
+
+    private fun verifyAnalysis(): String = HowlEngine.create().use { engine ->
+        check(engine.analysis() == AnalysisSnapshot.Silent)
+        engine.ok(engine.start(), "start sine for analysis")
+        waitFor("sine callbacks") { engine.diagnostics().callbackCount > 3 }
+        check(engine.analysis() == AnalysisSnapshot.Silent)
+        var report = ""
+        for (enabled in listOf(false, true, false)) {
+            engine.ok(engine.setAnalysisEnabled(enabled), "analysis opt-in")
+            val before = engine.diagnostics()
+            SystemClock.sleep(2_000)
+            val after = engine.diagnostics()
+            val blocks = after.callbackCount - before.callbackCount
+            check(blocks > 0)
+            report += "\nanalysis=$enabled callbacks=$blocks underruns=${after.underrunCount - before.underrunCount}"
+            val levels = engine.analysis()
+            if (enabled) {
+                check(levels.peak in 0.48f..0.51f && levels.rms in 0.30f..0.41f) { levels.toString() }
+            } else {
+                check(levels == AnalysisSnapshot.Silent)
+            }
+        }
+        engine.ok(engine.setAnalysisEnabled(true), "reenable analysis")
+        waitFor("meter signal") { engine.analysis().peak > 0.48f }
+        engine.ok(engine.pause(), "pause analysis source")
+        check(engine.analysis() == AnalysisSnapshot.Silent)
+        engine.ok(engine.resume(), "resume analysis source")
+        waitFor("resumed meter signal") { engine.analysis().peak > 0.48f }
+        engine.ok(engine.stop(), "stop analysis source")
+        check(engine.analysis() == AnalysisSnapshot.Silent)
+        report
     }
 
     private fun verifyLifecycle(fixture: File) {
@@ -97,8 +131,9 @@ class EngineApiInstrumentation : Instrumentation() {
             engine.ok(engine.enqueue(fixture.absolutePath), "enqueue WAV")
             check(engine.queueSize() == 2)
             engine.ok(engine.setRepeatMode(HowlEngine.RepeatMode.All), "repeat")
+            engine.ok(engine.setAnalysisEnabled(true), "enable file analysis")
             engine.ok(engine.start(), "start")
-            waitFor("audio callbacks") { engine.diagnostics().callbackCount > 0 }
+            waitFor("file meter signal") { engine.analysis().rms > 0.01f }
             engine.ok(engine.pause(), "pause")
             check(engine.transport().paused)
             val midpoint = engine.transport().durationMs / 2
