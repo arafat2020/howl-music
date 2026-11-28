@@ -11,6 +11,8 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Debug
+import android.os.Process
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
@@ -18,6 +20,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.FrameMetrics
 import android.view.Window
+import androidx.lifecycle.Lifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -46,13 +49,21 @@ import java.util.concurrent.TimeUnit
 /** Exercises the production bridge and native library on an Android control thread. */
 class EngineApiInstrumentation : Instrumentation() {
     private var persistenceStep: String? = null
-    private var profileVisualizerOnly = false
+    private var profileScenarios: List<String>? = null
+    private var profileSeconds = 15
+    private var profileBackgroundSeconds = 1800
+    private var profileSetupSeconds = 12
     private var profileTrackUri: Uri? = null
 
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         persistenceStep = arguments?.getString("persistenceStep")
-        profileVisualizerOnly = arguments?.getString("profileVisualizer") == "true"
+        val scenarios = arguments?.getString("profileScenarios")
+        val legacyVisualizer = arguments?.getString("profileVisualizer") == "true"
+        profileScenarios = scenarios?.split(',') ?: if (legacyVisualizer) listOf("now-playing", "visualizer") else null
+        profileSeconds = arguments?.getString("profileSeconds")?.toIntOrNull() ?: if (legacyVisualizer) 5 else 15
+        profileBackgroundSeconds = arguments?.getString("profileBackgroundSeconds")?.toIntOrNull() ?: 1800
+        profileSetupSeconds = arguments?.getString("profileSetupSeconds")?.toIntOrNull() ?: 12
         profileTrackUri = arguments?.getString("profileTrackUri")?.let(Uri::parse)
         start()
     }
@@ -60,8 +71,8 @@ class EngineApiInstrumentation : Instrumentation() {
     override fun onStart() {
         val result = Bundle()
         val status = try {
-            if (profileVisualizerOnly) {
-                result.putString("stream", "\n${profileVisualizer()}\n")
+            profileScenarios?.let { scenarios ->
+                result.putString("stream", "\n${profilePlayback(scenarios)}\n")
                 finish(Activity.RESULT_OK, result)
                 return
             }
@@ -328,7 +339,15 @@ class EngineApiInstrumentation : Instrumentation() {
     }
 
     // Opt-in manual profile. Follow the status prompts and leave each screen visible for its sample window.
-    private fun profileVisualizer(): String {
+    private fun profilePlayback(scenarios: List<String>): String {
+        val prompts = mapOf(
+            "background" to "Press Home and leave Howl in the background",
+            "now-playing" to "Open Now Playing and leave the album art visible",
+            "eq" to "Open EQ and adjust sliders during the measurement",
+            "visualizer" to "Open Visualizer with Reduce motion off",
+        )
+        require(scenarios.isNotEmpty() && scenarios.all { it in prompts })
+        require(profileSeconds in 2..300 && profileBackgroundSeconds in 2..3600 && profileSetupSeconds in 2..120)
         val activity = startActivitySync(
             Intent(targetContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
@@ -341,11 +360,11 @@ class EngineApiInstrumentation : Instrumentation() {
             } else {
                 MediaItem.Builder().setMediaId(uri.toString())
                     .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(uri).build())
-                    .setMediaMetadata(MediaMetadata.Builder().setTitle("Visualizer profile").build())
+                    .setMediaMetadata(MediaMetadata.Builder().setTitle("Howl profile track").build())
                     .build()
             }
             onMain { controller.setMediaItem(item) }
-            waitFor("profile track prepared for playback") {
+            waitFor("profile track prepared for playback", timeoutMs = 60_000) {
                 onMain { controller.currentMediaItem?.mediaId == item.mediaId &&
                     controller.isCommandAvailable(Player.COMMAND_PREPARE) }
             }
@@ -356,37 +375,72 @@ class EngineApiInstrumentation : Instrumentation() {
             }
             waitFor("profile tone playing") { onMain { controller.isPlaying } }
 
-            fun measure(screen: String): String {
-                sendStatus(1, Bundle().apply { putString("profile", "Open $screen") })
-                SystemClock.sleep(12_000)
+            fun measure(scenario: String): String {
+                val background = scenario == "background"
+                val seconds = if (background) profileBackgroundSeconds else profileSeconds
+                fun report(stage: String, message: String) = sendStatus(1, Bundle().apply {
+                    putString("phase", stage)
+                    putString("scenario", scenario)
+                    putString("profile", message)
+                })
+                report("setup", prompts.getValue(scenario))
+                SystemClock.sleep(profileSetupSeconds * 1000L)
+                fun verifyActivityState() = onMain {
+                    val state = (activity as MainActivity).lifecycle.currentState
+                    check(if (background) state == Lifecycle.State.CREATED else state == Lifecycle.State.RESUMED) {
+                        "Unexpected activity state $state for $scenario"
+                    }
+                    check(controller.currentMediaItem?.mediaId == item.mediaId && controller.isPlaying) {
+                        "Playback must remain on the profiling track"
+                    }
+                }
+                verifyActivityState()
                 val durations = mutableListOf<LongArray>()
-                val listener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+                var dropped = 0
+                val listener = Window.OnFrameMetricsAvailableListener { _, metrics, skipped ->
+                    dropped += skipped
                     durations += longArrayOf(
                         metrics.getMetric(FrameMetrics.TOTAL_DURATION),
                         metrics.getMetric(FrameMetrics.DRAW_DURATION),
                         metrics.getMetric(FrameMetrics.SWAP_BUFFERS_DURATION),
                     )
                 }
+                report("measure", "Measuring $scenario for $seconds seconds")
+                val pssStart = Debug.getPss()
                 val before = visualizerDiagnostics(controller)
-                onMain { activity.window.addOnFrameMetricsAvailableListener(listener, Handler(Looper.getMainLooper())) }
-                SystemClock.sleep(5_000)
-                val frames = onMain {
+                if (!background) onMain {
+                    activity.window.addOnFrameMetricsAvailableListener(listener, Handler(Looper.getMainLooper()))
+                }
+                val start = SystemClock.elapsedRealtimeNanos()
+                val cpuStart = Process.getElapsedCpuTime()
+                SystemClock.sleep(seconds * 1000L)
+                val cpuMs = Process.getElapsedCpuTime() - cpuStart
+                val end = SystemClock.elapsedRealtimeNanos()
+                val after = visualizerDiagnostics(controller)
+                val frames = if (background) emptyList() else onMain {
                     activity.window.removeOnFrameMetricsAvailableListener(listener)
                     durations.filter { it[0] >= 0 }
                 }
-                val after = visualizerDiagnostics(controller)
-                check(frames.isNotEmpty() && onMain { controller.isPlaying })
+                val pssEnd = Debug.getPss()
+                verifyActivityState()
+                val elapsedMs = (end - start) / 1_000_000.0
                 val callbacks = after.getLong(PlaybackAnalysis.CALLBACKS) - before.getLong(PlaybackAnalysis.CALLBACKS)
                 val underruns = after.getLong(PlaybackAnalysis.UNDERRUNS) - before.getLong(PlaybackAnalysis.UNDERRUNS)
-                fun percentile(metric: Int): Double {
-                    val sorted = frames.map { it[metric] }.sorted()
-                    return sorted[((sorted.size - 1) * 0.95).toInt()] / 1_000_000.0
+                check(callbacks > 0 && underruns >= 0) { "Audio counters reset or playback stalled during $scenario" }
+                fun p95(metric: Int): String {
+                    val sorted = frames.map { it[metric] }.filter { it >= 0 }.sorted()
+                    if (sorted.isEmpty()) return "NA"
+                    return (sorted[(kotlin.math.ceil(sorted.size * 0.95).toInt() - 1)] / 1_000_000.0).toString()
                 }
-                return "$screen frames=${frames.size} p95Ms=${percentile(0)} drawP95Ms=${percentile(1)} " +
-                    "swapP95Ms=${percentile(2)} audioCallbacks=$callbacks underruns=$underruns"
+                val summary = "$scenario elapsedMs=$elapsedMs cpuMs=$cpuMs cpuPct=${100 * cpuMs / elapsedMs} " +
+                    "pssStartKiB=$pssStart pssEndKiB=$pssEnd frames=${frames.size} droppedReports=$dropped " +
+                    "p95Ms=${p95(0)} drawP95Ms=${p95(1)} swapP95Ms=${p95(2)} " +
+                    "audioCallbacks=$callbacks underruns=$underruns startBootNs=$start endBootNs=$end"
+                report("result", summary)
+                return summary
             }
 
-            return listOf(measure("Now Playing"), measure("Visualizer")).joinToString("\n")
+            return scenarios.joinToString("\n", transform = ::measure)
         } finally {
             onMain {
                 controller.setMediaItem(MediaItem.EMPTY)
@@ -647,8 +701,8 @@ class EngineApiInstrumentation : Instrumentation() {
         check(code == 0) { "$operation returned ${statusName(code)}" }
     }
 
-    private fun waitFor(description: String, condition: () -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + 3_000
+    private fun waitFor(description: String, timeoutMs: Long = 3_000, condition: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
         while (!condition()) {
             check(SystemClock.elapsedRealtime() < deadline) { "Timed out waiting for $description" }
             SystemClock.sleep(10)

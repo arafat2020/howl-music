@@ -6,9 +6,13 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+val profileRelease = providers.gradleProperty("howlProfileRelease").orNull == "true"
+
 android {
     namespace = "com.howl.music"
     compileSdk = 35
+
+    if (profileRelease) testBuildType = "release"
 
     defaultConfig {
         applicationId = "com.howl.music"
@@ -22,6 +26,10 @@ android {
 
     buildTypes {
         release {
+            if (profileRelease) {
+                applicationIdSuffix = ".profile"
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

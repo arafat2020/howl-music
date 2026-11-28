@@ -3,7 +3,7 @@
 **Milestone:** 7 — Visualizer & polish  
 **Priority:** Release-hardening  
 **Depends on:** 6.x (7.2 optional)  
-**Status:** Not started
+**Status:** Emulator baseline captured. Physical validation pending.
 
 ## Objective
 
@@ -16,6 +16,10 @@ Commercial quality requires evidence. The brief demands measuring underruns, cal
 ## Architecture
 
 No new product architecture — this is a **measurement and remediation** phase. Fixes should be targeted, not speculative rewrites.
+
+## Baseline and runner
+
+The [performance baseline](../perf/baseline.md) contains the scenario matrix, build commands, metrics, thresholds, and physical capture procedure. The [ADB runner](../../scripts/profile-android.sh) captures per-window CPU, memory, frame data, and underruns with one source track. Battery dumps accompany each run for later analysis on hardware.
 
 ## Learning objectives
 
@@ -60,10 +64,10 @@ docs/perf/traces/  # optional links/notes, not huge binaries in git
 
 ## Acceptance criteria
 
-- [ ] Baseline metrics documented for primary scenarios.
-- [ ] Underrun behavior recorded.
-- [ ] At least one actionable finding addressed or explicitly deferred.
-- [ ] Methodology written clearly enough to rerun.
+- [x] Baseline metrics documented for primary scenarios.
+- [x] Underrun behavior recorded.
+- [x] At least one actionable finding addressed or explicitly deferred.
+- [x] Methodology written clearly enough to rerun.
 
 ## Review checklist
 
@@ -80,12 +84,12 @@ docs/perf/traces/  # optional links/notes, not huge binaries in git
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Repeatable profiling for Now Playing, EQ, Visualizer, and background playback, plus a signed local release comparison. |
+| Files created/modified | Baseline report, ADB runner, Android instrumentation, and an opt-in Gradle release profile. |
+| Tests executed | Two debug and two local release emulator runs across all four scenarios. Android build, JVM tests, instrumentation, and a separate Perfetto capture smoke test. |
+| Results | Zero native underruns across 16 measured windows. An exploratory release run had unsettled screen transitions and a frame spike. The confirmed repeat is in the baseline. Physical frame pacing remains open. |
+| Known limitations | The connected target was an emulator. Physical runs, a 30-minute battery comparison, callback-duration tracing, and output latency are pending. |
+| Decisions made | Compare debug and release on the same source and keep device runs separate from emulator screening. |
 | Next phase | 8.1 — Gapless implementation |
 
 **Approval required before Phase 8.1.**
