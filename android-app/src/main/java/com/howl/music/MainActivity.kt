@@ -6,12 +6,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import com.howl.music.data.db.LibraryRow
+import com.howl.music.data.db.HowlDatabase
+import com.howl.music.data.prefs.PreferencesRepository
 import com.howl.music.media.HowlPlaybackService
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.debug.ArtworkPreviewActivity
@@ -20,9 +24,12 @@ import com.howl.music.ui.debug.ScanActivity
 import com.howl.music.ui.theme.HowlTheme
 import com.howl.music.ui.nav.HowlNavHost
 import com.howl.music.ui.player.PlaybackUiState
+import kotlinx.coroutines.launch
 
 @UnstableApi
 class MainActivity : ComponentActivity() {
+    private val database by lazy { HowlDatabase.open(this) }
+    private val preferences by lazy { PreferencesRepository(database) }
     private var connection: PlayerController? = null
     private val player = mutableStateOf<MediaController?>(null)
     private val playback = mutableStateOf(PlaybackUiState())
@@ -39,14 +46,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            HowlTheme {
+            val reduceMotion = preferences.reducedMotion.collectAsStateWithLifecycle(initialValue = true).value
+            HowlTheme(reduceMotion = reduceMotion) {
                 HowlNavHost(
                     playback = playback.value,
                     onToggle = ::togglePlayback,
                     onPlayTrack = ::playTrack,
                     onScan = { startActivity(Intent(this, ScanActivity::class.java)) },
-                    onStop = { player.value?.stop() },
-                    onSeekStart = { player.value?.seekTo(0) },
+                    onSeek = ::seek,
+                    onSkipBack = { player.value?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_BACK) }?.seekBack() },
+                    onSkipForward = { player.value?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_FORWARD) }?.seekForward() },
+                    onReduceMotionChange = { enabled -> lifecycleScope.launch { preferences.setReducedMotion(enabled) } },
                     readPositionMs = { player.value?.currentPosition ?: 0L },
                     debugTools = if (BuildConfig.DEBUG) {
                         {
@@ -74,12 +84,28 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         player.value?.removeListener(listener)
         player.value = null
-        playback.value = playback.value.copy(canToggle = false, canSeek = false)
+        playback.value = playback.value.copy(
+            canToggle = false, canSeek = false, canSkipBack = false, canSkipForward = false, isPlaying = false,
+        )
         pendingMediaId = null
         pendingDiagnostics.value = false
         connection?.close()
         connection = null
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        database.close()
+    }
+
+    private fun seek(mediaId: String, positionMs: Long) {
+        val controller = player.value ?: return
+        if (pendingMediaId == null && controller.currentMediaItem?.mediaId == mediaId &&
+            controller.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+        ) {
+            controller.seekTo(positionMs)
+        }
     }
 
     private fun attachPlayer(controller: MediaController) {
@@ -164,6 +190,11 @@ class MainActivity : ComponentActivity() {
         val item = player.currentMediaItem
         val readyForCommands = pendingMediaId == null && !pendingDiagnostics.value
         playback.value = PlaybackUiState(
+            mediaId = item?.mediaId,
+            artist = player.mediaMetadata.artist?.toString(),
+            durationMs = player.duration.coerceAtLeast(0L),
+            canSkipBack = readyForCommands && player.isCommandAvailable(Player.COMMAND_SEEK_BACK),
+            canSkipForward = readyForCommands && player.isCommandAvailable(Player.COMMAND_SEEK_FORWARD),
             title = item?.let { player.mediaMetadata.title?.toString() ?: it.mediaId },
             artworkTrackUri = (item?.requestMetadata?.mediaUri ?: item?.localConfiguration?.uri)?.toString(),
             status = player.playerError?.message ?: when {
@@ -177,6 +208,7 @@ class MainActivity : ComponentActivity() {
             canToggle = readyForCommands && (item == null ||
                 player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)),
             canSeek = readyForCommands && player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+            isPlaying = player.isPlaying,
             positionMs = player.currentPosition,
         )
     }

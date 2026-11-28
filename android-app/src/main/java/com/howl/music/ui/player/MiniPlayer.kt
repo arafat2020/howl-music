@@ -21,12 +21,18 @@ import com.howl.music.ui.components.HowlButton
 import com.howl.music.ui.theme.HowlSpacing
 
 internal data class PlaybackUiState(
+    val mediaId: String? = null,
+    val artist: String? = null,
+    val durationMs: Long = 0,
+    val canSkipBack: Boolean = false,
+    val canSkipForward: Boolean = false,
     val title: String? = null,
     val artworkTrackUri: String? = null,
     val status: String = "Connecting to playback service",
     val playRequested: Boolean = false,
     val canToggle: Boolean = false,
     val canSeek: Boolean = false,
+    val isPlaying: Boolean = false,
     val positionMs: Long = 0,
 )
 

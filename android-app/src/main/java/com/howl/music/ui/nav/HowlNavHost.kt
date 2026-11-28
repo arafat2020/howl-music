@@ -13,31 +13,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.howl.music.ui.components.AlbumArt
 import com.howl.music.ui.components.HowlButton
 import com.howl.music.data.db.LibraryRow
 import com.howl.music.ui.library.LibraryScreen
 import com.howl.music.ui.player.MiniPlayer
+import com.howl.music.ui.player.NowPlayingScreen
+import com.howl.music.ui.theme.LocalReduceMotion
 import com.howl.music.ui.player.PlaybackUiState
 import com.howl.music.ui.theme.HowlSpacing
-import kotlinx.coroutines.delay
 
 private enum class Tab(val route: String, val label: String) {
     Library("library", "Library"),
@@ -46,6 +46,7 @@ private enum class Tab(val route: String, val label: String) {
 }
 
 private const val NOW_PLAYING = "now-playing"
+private const val QUEUE = "queue"
 
 @Composable
 internal fun HowlNavHost(
@@ -53,8 +54,10 @@ internal fun HowlNavHost(
     onToggle: () -> Unit,
     onPlayTrack: (LibraryRow) -> Unit,
     onScan: () -> Unit,
-    onStop: () -> Unit,
-    onSeekStart: () -> Unit,
+    onSeek: (String, Long) -> Unit,
+    onSkipBack: () -> Unit,
+    onSkipForward: () -> Unit,
+    onReduceMotionChange: (Boolean) -> Unit,
     readPositionMs: () -> Long,
     debugTools: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
@@ -63,7 +66,7 @@ internal fun HowlNavHost(
     val route = entry?.destination?.route ?: Tab.Library.route
     Scaffold(
         bottomBar = {
-            if (route != NOW_PLAYING) {
+            if (route != NOW_PLAYING && route != QUEUE) {
                 Column {
                     MiniPlayer(
                         playback,
@@ -99,26 +102,36 @@ internal fun HowlNavHost(
             }
             composable(Tab.Settings.route) {
                 Destination("Settings") {
-                    Text("Playback preferences will appear here.")
+                    val reduceMotion = LocalReduceMotion.current
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = HowlSpacing.TouchTarget)
+                            .toggleable(reduceMotion, role = Role.Switch, onValueChange = onReduceMotionChange),
+                        horizontalArrangement = Arrangement.spacedBy(HowlSpacing.Medium),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Reduce artwork motion", modifier = Modifier.weight(1f))
+                        Switch(checked = reduceMotion, onCheckedChange = null)
+                    }
                     debugTools?.invoke(this)
                 }
             }
             composable(NOW_PLAYING) {
-                Destination("Now Playing") {
+                NowPlayingScreen(
+                    playback = playback,
+                    readPositionMs = readPositionMs,
+                    onToggle = onToggle,
+                    onSeek = onSeek,
+                    onSkipBack = onSkipBack,
+                    onSkipForward = onSkipForward,
+                    onBack = { nav.popBackStack() },
+                    onQueue = { nav.navigate(QUEUE) { launchSingleTop = true } },
+                )
+            }
+            composable(QUEUE) {
+                Destination("Queue") {
                     HowlButton("Back", { nav.popBackStack() }, primary = false)
-                    AlbumArt(playback.artworkTrackUri, 128.dp)
-                    Text(playback.title ?: "Nothing playing", style = MaterialTheme.typography.titleLarge)
-                    Text(playback.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val position by produceState(playback.positionMs, playback) {
-                        do {
-                            value = readPositionMs()
-                            if (playback.playRequested) delay(250)
-                        } while (playback.playRequested)
-                    }
-                    Text("${position} ms", style = MaterialTheme.typography.bodySmall)
-                    HowlButton(if (playback.playRequested) "Pause" else "Play", onToggle, enabled = playback.canToggle)
-                    HowlButton("Seek to start", onSeekStart, enabled = playback.canSeek, primary = false)
-                    HowlButton("Stop", onStop, enabled = playback.canSeek, primary = false)
+                    playback.title?.let { Text("Now playing · $it") }
+                    Text("No upcoming tracks")
                 }
             }
         }

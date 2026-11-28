@@ -1,7 +1,9 @@
 package com.howl.music.data.prefs
 
+import androidx.room.withTransaction
 import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.db.entities.PreferencesEntity
+import kotlinx.coroutines.flow.map
 
 enum class RepeatDefault { Off, One, All }
 
@@ -11,8 +13,14 @@ data class PlaybackPreferences(
     val reducedMotion: Boolean = false,
 )
 
-class PreferencesRepository(db: HowlDatabase) {
+class PreferencesRepository(private val db: HowlDatabase) {
     private val dao = db.preferencesDao()
+
+    val reducedMotion = dao.observeReducedMotion().map { it ?: false }
+
+    suspend fun setReducedMotion(enabled: Boolean) = db.withTransaction {
+        save(get().copy(reducedMotion = enabled))
+    }
 
     suspend fun get(): PlaybackPreferences {
         val row = dao.get() ?: return PlaybackPreferences()

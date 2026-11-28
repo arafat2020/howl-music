@@ -3,7 +3,7 @@
 **Milestone:** 6 — Visual product  
 **Priority:** Foundational  
 **Depends on:** 6.2, 4.3  
-**Status:** Not started
+**Status:** Implemented
 
 ## Objective
 
@@ -16,10 +16,16 @@ Now Playing is the emotional center of the product. It must feel premium without
 ## Architecture
 
 ```text
-NowPlayingViewModel ← MediaController + metadata
-UI: artwork, controls, slider → player commands
-Motion: Compose graphics / graphicsLayer; no audio-callback coupling
+MainActivity’s MediaController listener → shared playback snapshot → Now Playing
+Transport and scrubber → MediaController commands
+Room preference + Android animator setting → artwork motion
 ```
+
+## Playback and motion
+
+The mini-player opens Now Playing with the active track, artist, and cover. The artwork scales with the viewport so the transport fits on a typical phone. Dragging the position slider previews the target and sends one seek when the gesture finishes. Position refreshes every 250 ms while the screen is active and audio is playing.
+
+The Android session exposes one playable item, so the transport skips five seconds back or fifteen seconds forward. Queue opens a dedicated screen that shows the current track and the empty upcoming state. The artwork tilts and shifts only during a horizontal drag, then springs back. Settings stores the reduction preference in Room, and Android’s animator setting also gates the gesture.
 
 ## Learning objectives
 
@@ -67,15 +73,15 @@ android-app/.../ui/player/NowPlayingScreen.kt
 
 ## Acceptance criteria
 
-- [ ] Now Playing matches brief hierarchy (art + controls clear).
-- [ ] Transport and seek work.
-- [ ] Motion is selective and disableable.
-- [ ] Playback remains stable during animations.
+- [x] Now Playing matches brief hierarchy (art + controls clear).
+- [x] Transport and seek work.
+- [x] Motion is selective and disableable.
+- [x] Playback remains stable during animations.
 
 ## Review checklist
 
-- [ ] Motion not driven by audio callback.
-- [ ] Contrast of metadata text acceptable.
+- [x] Motion not driven by audio callback.
+- [x] Contrast of metadata text acceptable.
 
 ## Potential pitfalls
 
@@ -87,12 +93,12 @@ android-app/.../ui/player/NowPlayingScreen.kt
 
 | Field | Notes |
 |-------|-------|
-| What was built | |
-| Files created/modified | |
-| Tests executed | |
-| Results | |
-| Known limitations | |
-| Decisions made | |
+| What was built | Now Playing layout, play/pause, seek, time skips, Queue navigation, and optional drag-driven artwork motion. |
+| Files created/modified | Now Playing screen, playback UI state, controller binding, navigation, and the Room-backed motion preference. |
+| Tests executed | Android build, JVM tests, Android instrumentation, and an emulator smoke test with a tagged 75-second FLAC. |
+| Results | The scrubber committed on release. A midpoint tap landed at 37.500 s, then the skip buttons landed at 32.500 s and 47.500 s. Queue navigation worked, and the session remained playing during the artwork gesture. The artwork moved and returned with motion enabled, stayed still after restarting with the saved reduction setting, and stayed still when Android animations were disabled. |
+| Known limitations | Queue editing and track-to-track skipping depend on a future multi-item session. Accessibility labels were inspected in the emulator UI hierarchy. A spoken TalkBack pass and physical-device frame timing are pending. The debug emulator recorded 18 janky frames out of 110 in one gesture run. |
+| Decisions made | Reuse the Activity’s single MediaController connection and the existing bounded artwork loader. Keep the Queue destination ready for phase 6.6. |
 | Next phase | 6.5 — Equalizer UI |
 
 **Approval required before Phase 6.5.**
