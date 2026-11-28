@@ -16,6 +16,8 @@ struct TransportSnapshot {
     int64_t durationFrames{0};
     int32_t sampleRate{0};
     bool paused{false};
+    int64_t handoffToken{0};
+    int32_t gaplessMode{0};
     bool playing{false};  // engine Running (may still be paused)
 };
 

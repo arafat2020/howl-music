@@ -316,31 +316,44 @@ Java_com_howl_music_bridge_HowlEngine_nativeSeekMs(
 }
 
 JNIEXPORT jint JNICALL
-Java_com_howl_music_bridge_HowlEngine_nativeGetTransport(
-    JNIEnv* env,
-    jclass /* bridge */,
-    jlong handle,
-    jlongArray out) {
-    if (out == nullptr) {
-        return static_cast<jint>(howl::Status::NullHandle);
-    }
-    if (env->GetArrayLength(out) < 5) {
-        return static_cast<jint>(howl::Status::InvalidState);
-    }
-    HowlTransportSnapshot snap{};
-    const int32_t code = callNative(env, [&] {
-        return howl_engine_get_transport(reinterpret_cast<HowlEngineHandle*>(handle), &snap);
+Java_com_howl_music_bridge_HowlEngine_nativeEnableGaplessTransport(JNIEnv* env, jclass, jlong handle) {
+    return callNative(env, [&] {
+        return howl_engine_enable_gapless_transport(reinterpret_cast<HowlEngineHandle*>(handle));
     });
-    if (code != 0 || env->ExceptionCheck()) {
-        return code;
-    }
-    jlong buf[5];
-    buf[0] = snap.position_frames;
-    buf[1] = snap.duration_frames;
-    buf[2] = snap.sample_rate;
-    buf[3] = snap.paused;
-    buf[4] = snap.playing;
-    env->SetLongArrayRegion(out, 0, 5, buf);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeSetGaplessNext(
+    JNIEnv* env, jclass, jlong handle, jbyteArray bytes, jlong token, jlong acknowledged) {
+    return callNative(env, [&]() -> jint {
+        std::string path;
+        if (bytes) {
+            const auto size = env->GetArrayLength(bytes);
+            path.resize(size);
+            env->GetByteArrayRegion(bytes, 0, size, reinterpret_cast<jbyte*>(path.data()));
+            if (env->ExceptionCheck() || path.find('\0') != std::string::npos) {
+                return static_cast<jint>(howl::Status::InvalidArgument);
+            }
+        }
+        return howl_engine_set_gapless_next(
+            reinterpret_cast<HowlEngineHandle*>(handle), bytes ? path.c_str() : nullptr, token, acknowledged);
+    });
+}
+
+JNIEXPORT jint JNICALL
+Java_com_howl_music_bridge_HowlEngine_nativeGetTransport(
+    JNIEnv* env, jclass, jlong handle, jlongArray out) {
+    if (!out) return static_cast<jint>(howl::Status::NullHandle);
+    if (env->GetArrayLength(out) < 7) return static_cast<jint>(howl::Status::InvalidState);
+    HowlEngineGaplessTransport snap{};
+    const auto code = callNative(env, [&] {
+        return howl_engine_get_gapless_transport(reinterpret_cast<HowlEngineHandle*>(handle), &snap);
+    });
+    if (code != 0 || env->ExceptionCheck()) return code;
+    const auto& t = snap.transport;
+    const jlong buf[]{t.position_frames, t.duration_frames, t.sample_rate, t.paused, t.playing,
+                      snap.handoff_token, snap.mode};
+    env->SetLongArrayRegion(out, 0, 7, buf);
     return code;
 }
 

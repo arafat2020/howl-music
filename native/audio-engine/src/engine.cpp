@@ -325,7 +325,7 @@ Status Engine::start() {
 
         output->setOutputMode(OutputMode::Ring, ring.get());
         output->setPositionFrames(&positionFrames_);
-        const Status outSt = output->start(fileSampleRate_);
+        const Status outSt = output->start(fileSampleRate_, true);
         if (outSt != Status::Ok) {
             std::lock_guard<std::mutex> lock(mutex_);
             state_ = EngineState::Idle;
@@ -369,6 +369,7 @@ Status Engine::start() {
                 prepareProcessGraphLocked();
                 (void)worker_->prefill(8);
                 worker_->setPushEnabled(true);
+                output_->setPaused(false);
             }
             state_ = EngineState::Running;
             if (mode == PlayMode::File) {
@@ -478,6 +479,8 @@ Status Engine::resume() {
 Status Engine::seekFrames(int64_t frameIndex) {
 #if defined(__ANDROID__)
     bool wasPaused = false;
+    int64_t consumed = 0;
+    int64_t startFrame = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (state_ != EngineState::Running || playMode_ != PlayMode::File || !worker_ ||
@@ -485,7 +488,10 @@ Status Engine::seekFrames(int64_t frameIndex) {
             return Status::InvalidState;
         }
         wasPaused = paused_.load(std::memory_order_acquire);
-        const int64_t dur = durationFrames_;
+        consumed = positionFrames_.load(std::memory_order_acquire);
+        const auto track = worker_->playback(consumed).track;
+        startFrame = track.startFrame;
+        const int64_t dur = track.durationFrames;
         if (frameIndex < 0 || (dur > 0 && frameIndex > dur)) {
             return Status::InvalidState;
         }
@@ -502,7 +508,7 @@ Status Engine::seekFrames(int64_t frameIndex) {
             return Status::InvalidState;
         }
         ring_->clear();
-        const Status st = worker_->seekToFrame(frameIndex);
+        const Status st = worker_->seekToFrame(frameIndex, consumed);
         if (st != Status::Ok) {
             if (!wasPaused) {
                 worker_->setPushEnabled(true);
@@ -511,7 +517,7 @@ Status Engine::seekFrames(int64_t frameIndex) {
             }
             return st;
         }
-        positionFrames_.store(frameIndex, std::memory_order_relaxed);
+        positionFrames_.store(startFrame + frameIndex, std::memory_order_relaxed);
         (void)worker_->prefill(8);
         if (!wasPaused) {
             worker_->setPushEnabled(true);
@@ -562,11 +568,48 @@ TransportSnapshot Engine::transport() const {
     if (snap.sampleRate <= 0 && output_) {
         snap.sampleRate = output_->sampleRate();
     }
+    if (gaplessTransport_ && worker_ && ring_ && playMode_ == PlayMode::File) {
+        const bool drained = worker_->reachedEof() && ring_->availableRead() == 0;
+        snap.positionFrames = positionFrames_.load(std::memory_order_acquire);
+        const int64_t consumed = snap.positionFrames;
+        const auto handoff = worker_->playback(snap.positionFrames);
+        snap.handoffToken = handoff.track.token;
+        snap.gaplessMode = static_cast<int32_t>(handoff.mode);
+        snap.durationFrames = handoff.track.durationFrames;
+        snap.positionFrames = std::max<int64_t>(0, snap.positionFrames - handoff.track.startFrame);
+        if (queue_.repeatMode() != RepeatMode::One && !snap.paused && drained &&
+            consumed >= handoff.writtenThrough) {
+            snap.playing = false;
+        }
+    }
 #endif
     if (snap.durationFrames > 0) {
         snap.positionFrames = std::min(snap.positionFrames, snap.durationFrames);
     }
     return snap;
+}
+
+Status Engine::enableGaplessTransport() {
+#if defined(__ANDROID__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (state_ == EngineState::Running || state_ == EngineState::Stopping) return Status::InvalidState;
+    gaplessTransport_ = true;
+    return Status::Ok;
+#else
+    return Status::UnsupportedFormat;
+#endif
+}
+
+Status Engine::setGaplessNext(const char* path, int64_t token, int64_t acknowledged) {
+    if (token < 0 || acknowledged < 0 || (token != 0 && (!path || !*path))) return Status::InvalidArgument;
+#if defined(__ANDROID__)
+    auto decoder = token == 0 ? nullptr : openDecoder(path);
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!gaplessTransport_ || !worker_ || state_ != EngineState::Running) return Status::NotRunning;
+    return worker_->setNext(std::move(decoder), token, acknowledged);
+#else
+    return Status::UnsupportedFormat;
+#endif
 }
 
 EngineState Engine::state() const {
@@ -732,7 +775,7 @@ Status Engine::changeTrack(const std::string& path) {
             output_ = std::make_unique<AudioOutput>(analysisEnabled_);
             output_->setOutputMode(OutputMode::Ring, ring_.get());
             output_->setPositionFrames(&positionFrames_);
-            const Status outSt = output_->start(fmt.sampleRate);
+            const Status outSt = output_->start(fmt.sampleRate, true);
             if (outSt != Status::Ok) {
                 trackChanging_.store(false, std::memory_order_release);
                 state_ = EngineState::Idle;
@@ -841,7 +884,8 @@ void Engine::queueWatchMain() {
             std::lock_guard<std::mutex> lock(mutex_);
             if (state_ == EngineState::Running && playMode_ == PlayMode::File && worker_ &&
                 ring_ && !paused_.load(std::memory_order_acquire) &&
-                !trackChanging_.load(std::memory_order_acquire)) {
+                !trackChanging_.load(std::memory_order_acquire) &&
+                (!gaplessTransport_ || queue_.repeatMode() == RepeatMode::One)) {
                 if (worker_->reachedEof() && ring_->availableRead() == 0) {
                     shouldAdvance = true;
                 }
@@ -1050,18 +1094,30 @@ int32_t howl_engine_seek_ms(HowlEngineHandle* engine, int64_t ms) {
     return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->seekMs(ms));
 }
 
-int32_t howl_engine_get_transport(HowlEngineHandle* engine, HowlTransportSnapshot* out) {
-    if (engine == nullptr || out == nullptr) {
-        return static_cast<int32_t>(howl::Status::NullHandle);
-    }
-    const howl::TransportSnapshot snap =
-        reinterpret_cast<howl::Engine*>(engine)->transport();
-    out->position_frames = snap.positionFrames;
-    out->duration_frames = snap.durationFrames;
-    out->sample_rate = snap.sampleRate;
-    out->paused = snap.paused ? 1 : 0;
-    out->playing = snap.playing ? 1 : 0;
+int32_t howl_engine_enable_gapless_transport(HowlEngineHandle* engine) {
+    if (!engine) return static_cast<int32_t>(howl::Status::NullHandle);
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->enableGaplessTransport());
+}
+
+int32_t howl_engine_set_gapless_next(HowlEngineHandle* engine, const char* path, int64_t token, int64_t acknowledged) {
+    if (!engine) return static_cast<int32_t>(howl::Status::NullHandle);
+    return static_cast<int32_t>(reinterpret_cast<howl::Engine*>(engine)->setGaplessNext(path, token, acknowledged));
+}
+
+int32_t howl_engine_get_gapless_transport(HowlEngineHandle* engine, HowlEngineGaplessTransport* out) {
+    if (!engine || !out) return static_cast<int32_t>(howl::Status::NullHandle);
+    const auto snap = reinterpret_cast<howl::Engine*>(engine)->transport();
+    *out = {{snap.positionFrames, snap.durationFrames, snap.sampleRate, snap.paused ? 1 : 0, snap.playing ? 1 : 0},
+            snap.handoffToken, snap.gaplessMode};
     return static_cast<int32_t>(howl::Status::Ok);
+}
+
+int32_t howl_engine_get_transport(HowlEngineHandle* engine, HowlTransportSnapshot* out) {
+    if (!out) return static_cast<int32_t>(howl::Status::NullHandle);
+    HowlEngineGaplessTransport extended{};
+    const auto status = howl_engine_get_gapless_transport(engine, &extended);
+    if (status == 0) *out = extended.transport;
+    return status;
 }
 
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out) {

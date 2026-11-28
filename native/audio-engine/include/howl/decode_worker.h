@@ -1,12 +1,14 @@
 #pragma once
 
 #include "howl/decoder.h"
+#include "howl/gapless_handoff.h"
 #include "howl/pcm_ring_buffer.h"
 #include "howl/status.h"
 
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -54,7 +56,9 @@ public:
      * Seek decoder. Call only while push is disabled and the audio callback
      * is not popping (output paused). Clears EOF so decoding can continue.
      */
-    Status seekToFrame(int64_t frameIndex);
+    Status seekToFrame(int64_t frameIndex, int64_t consumed = 0);
+    Status setNext(std::unique_ptr<IDecoder> decoder, int64_t token, int64_t acknowledged);
+    GaplessPlayback playback(int64_t consumed) const;
 
     int64_t decoderPositionFrames() const;
     int64_t decoderDurationFrames() const;
@@ -65,6 +69,11 @@ public:
 
 private:
     void threadMain();
+    bool fillChunk();
+
+    mutable std::mutex decoderMutex_;
+    GaplessHandoff handoff_;
+    int64_t writtenFrames_{0};
 
     std::unique_ptr<IDecoder> decoder_;
     PcmRingBuffer* ring_{nullptr};

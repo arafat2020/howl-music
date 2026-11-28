@@ -86,6 +86,8 @@ public:
     EngineState state() const;
     bool isPaused() const;
     TransportSnapshot transport() const;
+    Status enableGaplessTransport();
+    Status setGaplessNext(const char* path, int64_t token, int64_t acknowledged);
     EngineDiagnostics diagnostics() const;
     void setAnalysisEnabled(bool enabled);
     AnalysisSnapshot analysis() const;
@@ -124,6 +126,7 @@ private:
 
     std::unique_ptr<PcmRingBuffer> ring_;
     std::unique_ptr<DecodeWorker> worker_;
+    bool gaplessTransport_{false};
     std::atomic<bool> analysisEnabled_{false};
     std::unique_ptr<AudioOutput> output_;
 

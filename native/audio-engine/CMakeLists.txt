@@ -6,6 +6,7 @@ add_library(howl_audio_engine STATIC
     src/decoder_factory.cpp
     src/pcm_ring_buffer.cpp
     src/decode_worker.cpp
+    src/gapless_handoff.cpp
     src/queue_controller.cpp
 )
 

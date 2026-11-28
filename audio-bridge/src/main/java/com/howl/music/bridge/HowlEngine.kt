@@ -101,6 +101,12 @@ class HowlEngine private constructor(
             PlayMode.Sine
         }
 
+    /** Opt into app-managed EOF and one compatible, pre-opened successor. Call before starting. */
+    fun enableGaplessTransport(): Int = nativeEnableGaplessTransport(requireHandle())
+
+    fun setGaplessNext(path: String?, token: Long, acknowledged: Long): Int =
+        nativeSetGaplessNext(requireHandle(), path?.encodeToByteArray(), token, acknowledged)
+
     fun transport(): TransportSnapshot {
         val buf = LongArray(TRANSPORT_FIELDS)
         val code = nativeGetTransport(requireHandle(), buf)
@@ -113,6 +119,8 @@ class HowlEngine private constructor(
             sampleRate = buf[2].toInt(),
             paused = buf[3] != 0L,
             playing = buf[4] != 0L,
+            handoffToken = buf[5],
+            gaplessMode = TransportSnapshot.GaplessMode.entries[buf[6].toInt()],
         )
     }
 
@@ -181,7 +189,7 @@ class HowlEngine private constructor(
 
     companion object {
         private const val DIAG_FIELDS = 7
-        private const val TRANSPORT_FIELDS = 5
+        private const val TRANSPORT_FIELDS = 7
 
         private val loadError: String? = try {
             System.loadLibrary("howl_engine")
@@ -233,6 +241,10 @@ class HowlEngine private constructor(
         @JvmStatic private external fun nativeCurrentIndex(handle: Long): Int
         @JvmStatic private external fun nativeRepeatMode(handle: Long): Int
         @JvmStatic private external fun nativePlayMode(handle: Long): Int
+        @JvmStatic private external fun nativeEnableGaplessTransport(handle: Long): Int
+        @JvmStatic private external fun nativeSetGaplessNext(
+            handle: Long, path: ByteArray?, token: Long, acknowledged: Long,
+        ): Int
         @JvmStatic private external fun nativeGetTransport(handle: Long, out: LongArray): Int
         @JvmStatic private external fun nativeSetAnalysisEnabled(handle: Long, enabled: Boolean): Int
         @JvmStatic private external fun nativeGetAnalysis(handle: Long, out: FloatArray): Int

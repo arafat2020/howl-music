@@ -133,6 +133,7 @@ class HowlPlaybackService : MediaSessionService() {
                     val extras = Bundle()
                     if (args.getBoolean(PlaybackAnalysis.DIAGNOSTICS_ONLY)) {
                         val diagnostics = player.analysisDiagnostics()
+                        extras.putString(PlaybackAnalysis.GAPLESS, player.gaplessStatus())
                         extras.putLong(PlaybackAnalysis.UNDERRUNS, diagnostics.underrunCount)
                         extras.putLong(PlaybackAnalysis.CALLBACKS, diagnostics.callbackCount)
                     } else {
@@ -200,7 +201,9 @@ class HowlPlaybackService : MediaSessionService() {
                 mainExecutor.execute {
                     val localUri = media.localConfiguration?.uri
                     if (localUri?.scheme == "file" && !destroying && !result.isCancelled && session?.player === player) {
-                        result.set(queueResult(player.editQueue(action, media = media)))
+                        val accepted = player.editQueue(action, media = media)
+                        if (!accepted) discardSource(localUri)
+                        result.set(queueResult(accepted))
                     } else {
                         if (localUri?.scheme == "file" && !destroying) discardSource(localUri)
                         result.set(SessionResult(SessionResult.RESULT_ERROR_IO))

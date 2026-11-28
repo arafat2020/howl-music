@@ -10,7 +10,11 @@ data class TransportSnapshot(
     val sampleRate: Int,
     val paused: Boolean,
     val playing: Boolean,
+    val handoffToken: Long = 0,
+    val gaplessMode: GaplessMode = GaplessMode.Idle,
 ) {
+    enum class GaplessMode { Idle, Primed, Joined, Fallback }
+
     val positionMs: Long
         get() = if (sampleRate <= 0) 0 else (positionFrames * 1000L) / sampleRate
 

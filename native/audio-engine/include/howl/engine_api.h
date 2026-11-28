@@ -16,6 +16,12 @@ typedef struct HowlTransportSnapshot {
     int32_t playing;  // 0/1
 } HowlTransportSnapshot;
 
+typedef struct HowlEngineGaplessTransport {
+    HowlTransportSnapshot transport;
+    int64_t handoff_token; // nonzero after output consumes the joined track
+    int32_t mode;          // 0 idle, 1 primed, 2 joined, 3 fallback
+} HowlEngineGaplessTransport;
+
 /** C layout matches howl::EngineDiagnostics field order. */
 typedef struct HowlEngineDiagnostics {
     int32_t sample_rate;
@@ -67,6 +73,9 @@ int32_t howl_engine_resume(HowlEngineHandle* engine);
 int32_t howl_engine_seek_frames(HowlEngineHandle* engine, int64_t frame);
 int32_t howl_engine_seek_ms(HowlEngineHandle* engine, int64_t ms);
 int32_t howl_engine_get_transport(HowlEngineHandle* engine, HowlTransportSnapshot* out);
+int32_t howl_engine_enable_gapless_transport(HowlEngineHandle* engine);
+int32_t howl_engine_set_gapless_next(HowlEngineHandle* engine, const char* path, int64_t token, int64_t acknowledged);
+int32_t howl_engine_get_gapless_transport(HowlEngineHandle* engine, HowlEngineGaplessTransport* out);
 
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out);
 

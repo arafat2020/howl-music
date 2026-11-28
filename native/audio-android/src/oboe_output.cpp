@@ -134,7 +134,7 @@ bool AudioOutput::isPaused() const {
     return impl_->paused.load(std::memory_order_acquire);
 }
 
-Status AudioOutput::start(int32_t requestedSampleRate) {
+Status AudioOutput::start(int32_t requestedSampleRate, bool initiallyPaused) {
     if (impl_->stream && impl_->stream->getState() == oboe::StreamState::Started) {
         return Status::AlreadyRunning;
     }
@@ -150,7 +150,7 @@ Status AudioOutput::start(int32_t requestedSampleRate) {
     impl_->lastFramesPerCallback.store(0, std::memory_order_relaxed);
     impl_->underrunCount.store(0, std::memory_order_relaxed);
     impl_->errorCount.store(0, std::memory_order_relaxed);
-    impl_->paused.store(false, std::memory_order_relaxed);
+    impl_->paused.store(initiallyPaused, std::memory_order_relaxed);
 
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output)

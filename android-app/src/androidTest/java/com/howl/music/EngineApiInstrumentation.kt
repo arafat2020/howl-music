@@ -31,6 +31,7 @@ import androidx.media3.session.SessionToken
 import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.bridge.EqState
 import com.howl.music.bridge.HowlEngine
+import com.howl.music.bridge.TransportSnapshot
 import com.howl.music.data.db.verifyRoomSchema
 import com.howl.music.data.artwork.verifyArtwork
 import com.howl.music.data.readUserData
@@ -92,6 +93,7 @@ class EngineApiInstrumentation : Instrumentation() {
                         readUserData(targetContext, fixture)
                         result.putString("analysis", verifyAnalysis())
                         verifyLifecycle(fixture)
+                        result.putString("gapless", verifyGapless(fixture))
                         verifyCloseAndRestart(fixture)
                         verifyMedia3(fixture)
                         verifyServicePlayback(fixture)
@@ -178,6 +180,40 @@ class EngineApiInstrumentation : Instrumentation() {
         check(engine.isClosed)
         engine.close()
         check(runCatching { engine.transport() }.exceptionOrNull() is IllegalStateException)
+    }
+
+    private fun verifyGapless(wav: File): String {
+        val flac = File.createTempFile("howl-gapless-", ".flac", targetContext.cacheDir)
+        try {
+            targetContext.assets.open("sine_880_16bit_stereo.flac").use { input ->
+                flac.outputStream().use { input.copyTo(it) }
+            }
+            return listOf(wav, flac).joinToString("\n") { source ->
+                HowlEngine.create().use { engine ->
+                    engine.ok(engine.enableGaplessTransport(), "enable gapless transport")
+                    engine.ok(engine.setPlayMode(HowlEngine.PlayMode.File), "file mode")
+                    engine.ok(engine.load(source.absolutePath), "load first track")
+                    engine.ok(engine.start(), "start gapless fixture")
+                    engine.ok(engine.setGaplessNext(source.absolutePath, 1, 0), "prime next track")
+                    waitFor("first gapless audio callbacks") { engine.diagnostics().callbackCount > 3 }
+                    val before = engine.diagnostics()
+                    waitFor("rendered gapless track boundary") { engine.transport().handoffToken == 1L }
+                    val joined = engine.transport()
+                    val after = engine.diagnostics()
+                    check(joined.gaplessMode == TransportSnapshot.GaplessMode.Joined)
+                    check(joined.positionFrames < joined.durationFrames)
+                    check(after.callbackCount > before.callbackCount)
+                    check(after.underrunCount == before.underrunCount)
+                    engine.ok(engine.setGaplessNext(null, 0, joined.handoffToken), "acknowledge handoff")
+                    engine.ok(engine.pause(), "pause joined track")
+                    engine.ok(engine.seekMs(100), "seek within joined track")
+                    check(engine.transport().let { it.handoffToken == 1L && it.positionMs == 100L })
+                    "${source.extension} callbacks=${after.callbackCount - before.callbackCount} underruns=0"
+                }
+            }
+        } finally {
+            flac.delete()
+        }
     }
 
     private fun verifyCloseAndRestart(fixture: File) {
@@ -616,6 +652,11 @@ class EngineApiInstrumentation : Instrumentation() {
                 } == listOf("First", "Second", "Fourth", "Third")
             }
         }
+        onMain {
+            repeat(10) { controller.seekToNextMediaItem() }
+            controller.seekTo(0, 0)
+        }
+        current("First")
         onMain { controller.seekToNextMediaItem() }
         current("Second")
         edit(PlaybackQueue.Action.Remove, id = track("Third"))
@@ -627,6 +668,7 @@ class EngineApiInstrumentation : Instrumentation() {
         edit(PlaybackQueue.Action.Play, id = track("Play now"))
         current("Play now")
         current("At EOF")
+        check(visualizerDiagnostics(controller).getString(PlaybackAnalysis.GAPLESS) == "Joined")
         edit(PlaybackQueue.Action.Remove, id = track("At EOF"))
         waitFor("queue empty after final removal") { onMain { controller.mediaItemCount == 0 } }
     }

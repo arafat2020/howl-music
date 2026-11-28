@@ -10,6 +10,7 @@ object PlaybackAnalysis {
     const val PEAK = "peak"
     const val RMS = "rms"
     const val DIAGNOSTICS_ONLY = "diagnosticsOnly"
+    const val GAPLESS = "gapless"
     const val UNDERRUNS = "underruns"
     const val CALLBACKS = "callbacks"
 

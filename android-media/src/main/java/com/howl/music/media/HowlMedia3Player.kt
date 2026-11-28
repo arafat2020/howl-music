@@ -14,6 +14,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.howl.music.bridge.AnalysisSnapshot
 import com.howl.music.bridge.HowlEngine
+import com.howl.music.bridge.TransportSnapshot
 
 /**
  * Playlist-backed Media3 player for local WAV and FLAC files. Owns one HowlEngine.
@@ -29,7 +30,13 @@ class HowlMedia3Player internal constructor(
 
     private val engine = run {
         verifyApplicationThread()
-        HowlEngine.create()
+        HowlEngine.create().also {
+            val status = it.enableGaplessTransport()
+            if (status != 0) {
+                it.close()
+                error("Could not enable gapless transport ($status)")
+            }
+        }
     }
     internal var equalizer = PlaybackEqualizer.Settings()
         private set
@@ -68,10 +75,22 @@ class HowlMedia3Player internal constructor(
     }
 
     private class Entry(val item: MediaItem)
+    private var nextToken = 1L
+    private var primed: Entry? = null
+    private var primedToken = 0L
+    private var nativeToken = 0L
+    private var lastHandoffFallback = false
+    private var gaplessMode = TransportSnapshot.GaplessMode.Idle
+
+    internal fun gaplessStatus(): String {
+        val mode = if (started) engine.transport().gaplessMode else gaplessMode
+        return if (mode == TransportSnapshot.GaplessMode.Idle && lastHandoffFallback) "Fallback" else mode.name
+    }
 
     private val playlist = mutableListOf<Entry>()
     private var publishedTimeline: List<MediaItemData>? = null
     private var current: Entry? = null
+    private var preparedEntry: Entry? = null
     private val item: MediaItem? get() = current?.item
     private val currentIndex: Int get() = playlist.indexOf(current)
     private var playbackState = Player.STATE_IDLE
@@ -100,12 +119,14 @@ class HowlMedia3Player internal constructor(
                 val entry = current
                 refreshPosition()
                 if (playWhenReady && playbackState == Player.STATE_ENDED) {
-                    val next = playlist.getOrNull(currentIndex + 1)
-                        ?: playlist.firstOrNull().takeIf { repeatMode == Player.REPEAT_MODE_ALL }
-                    if (next != null) select(next, 0, prepare = true)
+                    val next = successor(playlist, repeatMode)
+                    if (next != null) {
+                        select(next, 0, prepare = true)
+                        lastHandoffFallback = true
+                    }
                 }
-                repeatDiscontinuity = current === entry && started && repeatMode == Player.REPEAT_MODE_ONE &&
-                    positionMs < previous
+                repeatDiscontinuity = repeatDiscontinuity ||
+                    (current === entry && started && repeatMode == Player.REPEAT_MODE_ONE && positionMs < previous)
             }
             invalidateState()
         }
@@ -185,14 +206,15 @@ class HowlMedia3Player internal constructor(
         media: MediaItem? = null,
     ): Boolean {
         verifyApplicationThread()
-        val entry = playlist.firstOrNull { it.item.mediaId == id }
-        val index = playlist.indexOf(entry)
+        command { refreshPosition() }
+        val selected = playlist.firstOrNull { it.item.mediaId == id }
+        val index = playlist.indexOf(selected)
         val playingIndex = currentIndex
         val targetIndex = playlist.indexOfFirst { it.item.mediaId == targetId }
         when (action) {
             PlaybackQueue.Action.AddNext, PlaybackQueue.Action.AddNow -> if (media == null) return false
-            PlaybackQueue.Action.Play -> if (entry == null) return false
-            PlaybackQueue.Action.Remove -> if (entry == null) return false
+            PlaybackQueue.Action.Play -> if (selected == null) return false
+            PlaybackQueue.Action.Remove -> if (selected == null) return false
             PlaybackQueue.Action.MoveEarlier, PlaybackQueue.Action.MoveNext ->
                 if (index <= playingIndex + 1) return false
             PlaybackQueue.Action.MoveLater ->
@@ -201,64 +223,62 @@ class HowlMedia3Player internal constructor(
                 if (index <= playingIndex || targetIndex <= playingIndex || index == targetIndex) return false
         }
 
-        command {
+        val draft = playlist.toMutableList()
+        val startsNewTrack = action == PlaybackQueue.Action.AddNow || action == PlaybackQueue.Action.Play ||
+            (action == PlaybackQueue.Action.Remove && selected === current) ||
+            (action == PlaybackQueue.Action.AddNext && current == null)
+        if (!startsNewTrack) {
+            val leaveSample = action == PlaybackQueue.Action.AddNext &&
+                item?.mediaId == HowlPlaybackService.SAMPLE_MEDIA_ID && repeatMode == Player.REPEAT_MODE_ONE
+            if (leaveSample) setNativeRepeatMode(Player.REPEAT_MODE_OFF)
             when (action) {
-                PlaybackQueue.Action.AddNext, PlaybackQueue.Action.AddNow -> {
-                    val fromSample = item?.mediaId == HowlPlaybackService.SAMPLE_MEDIA_ID
-                    if ((fromSample || current == null) && repeatMode == Player.REPEAT_MODE_ONE) {
-                        setNativeRepeatMode(Player.REPEAT_MODE_OFF)
-                    }
-                    val next = Entry(checkNotNull(media))
-                    playlist.add(playingIndex + 1, next)
-                    if (fromSample && action == PlaybackQueue.Action.AddNow) playlist.removeAt(playingIndex)
-                    if (action == PlaybackQueue.Action.AddNow || current == null) {
-                        if (action == PlaybackQueue.Action.AddNow) {
-                            playWhenReady = true
-                            playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+                PlaybackQueue.Action.AddNext -> draft.add(playingIndex + 1, Entry(checkNotNull(media)))
+                PlaybackQueue.Action.Remove -> draft.removeAt(index)
+                PlaybackQueue.Action.MoveEarlier -> draft.add(index - 1, draft.removeAt(index))
+                PlaybackQueue.Action.MoveLater -> draft.add(index + 1, draft.removeAt(index))
+                PlaybackQueue.Action.MoveNext -> draft.add(playingIndex + 1, draft.removeAt(index))
+                PlaybackQueue.Action.MoveTo -> draft.add(targetIndex, draft.removeAt(index))
+                else -> error("Expected a queue-only edit")
+            }
+            if (!prime(successor(draft, repeatMode))) {
+                // The next PCM is already in the ring. Reject the edit rather than audibly playing a removed entry.
+                invalidateState()
+                return false
+            }
+            playlist.clear()
+            playlist.addAll(draft)
+            if (action == PlaybackQueue.Action.Remove) discardSource(checkNotNull(selected))
+            schedulePoll()
+        } else {
+            command {
+                when (action) {
+                    PlaybackQueue.Action.AddNext, PlaybackQueue.Action.AddNow -> {
+                        val fromSample = item?.mediaId == HowlPlaybackService.SAMPLE_MEDIA_ID
+                        if ((fromSample || current == null) && repeatMode == Player.REPEAT_MODE_ONE) {
+                            setNativeRepeatMode(Player.REPEAT_MODE_OFF)
                         }
-                        select(next, 0, prepare = true)
+                        val added = Entry(checkNotNull(media))
+                        playlist.add(playingIndex + 1, added)
+                        if (fromSample && action == PlaybackQueue.Action.AddNow) playlist.removeAt(playingIndex)
+                        if (action == PlaybackQueue.Action.AddNow) requestPlay()
+                        select(added, 0, prepare = true)
                     }
-                }
-                PlaybackQueue.Action.Play -> {
-                    if (index > playingIndex + 1) playlist.add(playingIndex + 1, playlist.removeAt(index))
-                    playWhenReady = true
-                    playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
-                    select(checkNotNull(entry), 0, prepare = true)
-                }
-                PlaybackQueue.Action.Remove -> {
-                    if (entry === current) {
+                    PlaybackQueue.Action.Play -> {
+                        if (index > playingIndex + 1) playlist.add(playingIndex + 1, playlist.removeAt(index))
+                        requestPlay()
+                        select(checkNotNull(selected), 0, prepare = true)
+                    }
+                    PlaybackQueue.Action.Remove -> {
                         val next = playlist.getOrNull(index + 1)
-                        if (next == null) {
-                            playWhenReady = false
-                            // Completed tracks are history. Removing the final current track ends the queue.
-                            val removed = playlist.toList()
-                            playlist.clear()
-                            try {
-                                select(null, 0, prepare = false)
-                            } finally {
-                                removed.forEach(::discardSource)
-                            }
-                        } else {
-                            playlist.removeAt(index)
-                            try {
-                                select(next, 0, prepare = true)
-                            } finally {
-                                discardSource(checkNotNull(entry))
-                            }
+                        val removed = if (next == null) playlist.toList() else listOf(checkNotNull(selected))
+                        if (next == null) playlist.clear() else playlist.removeAt(index)
+                        try {
+                            select(next, 0, prepare = next != null)
+                        } finally {
+                            removed.forEach(::discardSource)
                         }
-                    } else {
-                        discardSource(playlist.removeAt(index))
                     }
-                }
-                PlaybackQueue.Action.MoveEarlier, PlaybackQueue.Action.MoveLater,
-                PlaybackQueue.Action.MoveNext, PlaybackQueue.Action.MoveTo -> {
-                    val target = when (action) {
-                        PlaybackQueue.Action.MoveEarlier -> index - 1
-                        PlaybackQueue.Action.MoveLater -> index + 1
-                        PlaybackQueue.Action.MoveTo -> targetIndex
-                        else -> playingIndex + 1
-                    }
-                    playlist.add(target, playlist.removeAt(index))
+                    else -> error("Expected a track selection")
                 }
             }
         }
@@ -267,8 +287,31 @@ class HowlMedia3Player internal constructor(
         return true
     }
 
+    private fun requestPlay() {
+        playWhenReady = true
+        playWhenReadyReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+    }
+
+    private fun successor(entries: List<Entry>, mode: Int): Entry? {
+        if (mode == Player.REPEAT_MODE_ONE) return null
+        return entries.getOrNull(entries.indexOf(current) + 1)
+            ?: entries.firstOrNull().takeIf { mode == Player.REPEAT_MODE_ALL }
+    }
+
+    private fun prime(next: Entry?, force: Boolean = false): Boolean {
+        if (!started || (!force && next === primed)) return true
+        val path = next?.item?.localConfiguration?.uri?.path
+        if (next != null && path == null) return false
+        val token = if (next == null) 0 else nextToken++
+        if (engine.setGaplessNext(path, token, nativeToken) != 0) return false
+        primed = next
+        primedToken = token
+        return true
+    }
+
     private fun select(entry: Entry?, position: Long, prepare: Boolean) {
         current = entry
+        lastHandoffFallback = false
         publishedTimeline = null
         durationMs = C.TIME_UNSET
         positionMs = position.coerceAtLeast(0)
@@ -333,9 +376,10 @@ class HowlMedia3Player internal constructor(
     }
 
     private fun setNativeRepeatMode(repeatMode: Int) {
+        val accepted = prime(successor(playlist, repeatMode))
         checkStatus(
             engine.setRepeatMode(
-                if (repeatMode == Player.REPEAT_MODE_ONE) HowlEngine.RepeatMode.One
+                if (repeatMode == Player.REPEAT_MODE_ONE && accepted) HowlEngine.RepeatMode.One
                 else HowlEngine.RepeatMode.None,
             ),
             "Set repeat",
@@ -364,16 +408,21 @@ class HowlMedia3Player internal constructor(
         return Futures.immediateVoidFuture()
     }
 
-    private fun prepareItem() {
+    private fun loadCurrentItem() {
         val uri = checkNotNull(item?.localConfiguration?.uri) { "Media item has no local file" }
         val path = requireNotNull(uri.path?.takeIf { uri.scheme == "file" && it.startsWith("/") }) {
             "Howl playback requires an absolute file URI"
         }
         checkStatus(engine.setPlayMode(HowlEngine.PlayMode.File), "Select file mode")
         checkStatus(engine.load(path), "Load media")
+        preparedEntry = current
         durationMs = engine.transport().durationMs
         publishedTimeline = null
         positionMs = positionMs.coerceIn(0, durationMs)
+    }
+
+    private fun prepareItem() {
+        loadCurrentItem()
         playbackState = Player.STATE_READY
         error = null
         if (playWhenReady) startOrResumeStream()
@@ -393,12 +442,15 @@ class HowlMedia3Player internal constructor(
             checkStatus(engine.resume(), "Resume")
             return
         }
+        if (preparedEntry !== current) loadCurrentItem()
         val requested = positionMs
         checkStatus(engine.start(), "Start")
         started = true
+        gaplessMode = TransportSnapshot.GaplessMode.Idle
         if (requested != 0L) {
             checkStatus(engine.seekMs(requested), "Seek at start")
         }
+        prime(successor(playlist, repeatMode))
         refreshPosition()
     }
 
@@ -428,6 +480,9 @@ class HowlMedia3Player internal constructor(
         try {
             if (started) checkStatus(engine.stop(), "Stop")
             started = false
+            primed = null
+            primedToken = 0
+            nativeToken = 0
         } finally {
             audioFocus?.release()
         }
@@ -436,6 +491,20 @@ class HowlMedia3Player internal constructor(
     private fun refreshPosition() {
         if (!started) return
         val snapshot = engine.transport()
+        gaplessMode = snapshot.gaplessMode
+        if (snapshot.handoffToken != nativeToken) {
+            val joined = checkNotNull(primed?.takeIf { primedToken == snapshot.handoffToken })
+            current = joined
+            lastHandoffFallback = false
+            nativeToken = snapshot.handoffToken
+            durationMs = snapshot.durationMs
+            publishedTimeline = null
+            repeatDiscontinuity = true
+            if (snapshot.playing) {
+                check(prime(successor(playlist, repeatMode), force = true))
+                if (repeatMode == Player.REPEAT_MODE_ONE) setNativeRepeatMode(repeatMode)
+            }
+        }
         if (snapshot.playing) {
             positionMs = snapshot.positionMs
         } else {
@@ -456,8 +525,16 @@ class HowlMedia3Player internal constructor(
             playWhenReady = false
             error = PlaybackException(failure.message, failure, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
         }
-        if (started && playWhenReady) handler.postDelayed(poll, POLL_INTERVAL_MS)
+        schedulePoll()
         return Futures.immediateVoidFuture()
+    }
+
+    private fun schedulePoll() {
+        handler.removeCallbacks(poll)
+        if (started && playWhenReady) {
+            val interval = if (primed != null && durationMs - positionMs <= 500) 50L else POLL_INTERVAL_MS
+            handler.postDelayed(poll, interval)
+        }
     }
 
     private fun checkStatus(status: Int, operation: String) {

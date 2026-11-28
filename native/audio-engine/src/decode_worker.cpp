@@ -1,5 +1,6 @@
 #include "howl/decode_worker.h"
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 
@@ -25,6 +26,8 @@ Status DecodeWorker::start(std::unique_ptr<IDecoder> decoder, PcmRingBuffer* rin
 
     decoder_ = std::move(decoder);
     ring_ = ring;
+    handoff_.reset(decoder_->frameCount());
+    writtenFrames_ = 0;
     eof_.store(false, std::memory_order_relaxed);
     // Start with push disabled so the control thread can prefill / seek safely
     // before enabling (Engine::start / seekFrames).
@@ -44,27 +47,61 @@ void DecodeWorker::stop() {
         thread_.join();
     }
     decoder_.reset();
+    handoff_.reset(0);
     ring_ = nullptr;
     scratch_.clear();
 }
 
 void DecodeWorker::setPushEnabled(bool enabled) {
+    std::lock_guard lock(decoderMutex_);
     pushEnabled_.store(enabled, std::memory_order_release);
 }
 
-Status DecodeWorker::seekToFrame(int64_t frameIndex) {
+Status DecodeWorker::seekToFrame(int64_t frameIndex, int64_t consumed) {
+    std::lock_guard lock(decoderMutex_);
     if (!decoder_ || !decoder_->isOpen()) {
         return Status::NotRunning;
     }
-    const Status st = decoder_->seek(frameIndex);
+    const auto start = handoff_.playback(consumed).track.startFrame;
+    const Status st = handoff_.seek(decoder_, frameIndex, consumed);
     if (st != Status::Ok) {
         return st;
     }
+    writtenFrames_ = start + frameIndex;
     eof_.store(false, std::memory_order_release);
     return Status::Ok;
 }
 
+Status DecodeWorker::setNext(std::unique_ptr<IDecoder> decoder, int64_t token, int64_t acknowledged) {
+    // Decode a head block before acquiring the active worker's lock.
+    std::vector<float> head;
+    if (decoder && decoder->format().channelCount == 2) {
+        head.resize(kReadChunkFrames * 2);
+        int32_t frames = 0;
+        if (decoder->read(head.data(), kReadChunkFrames, &frames) == Status::Ok && frames > 0) {
+            head.resize(static_cast<std::size_t>(frames) * 2);
+        } else {
+            head.clear();
+            decoder.reset();
+        }
+    }
+    std::lock_guard lock(decoderMutex_);
+    if (!decoder_) return Status::NotRunning;
+    const auto result = handoff_.configure(std::move(decoder), std::move(head),
+                                          token, acknowledged, decoder_->format());
+    if (result == Status::Ok && token != 0) eof_.store(false, std::memory_order_release);
+    return result;
+}
+
+GaplessPlayback DecodeWorker::playback(int64_t consumed) const {
+    std::lock_guard lock(decoderMutex_);
+    auto playback = handoff_.playback(consumed);
+    playback.writtenThrough = writtenFrames_;
+    return playback;
+}
+
 int64_t DecodeWorker::decoderPositionFrames() const {
+    std::lock_guard lock(decoderMutex_);
     if (!decoder_ || !decoder_->isOpen()) {
         return 0;
     }
@@ -72,6 +109,7 @@ int64_t DecodeWorker::decoderPositionFrames() const {
 }
 
 int64_t DecodeWorker::decoderDurationFrames() const {
+    std::lock_guard lock(decoderMutex_);
     if (!decoder_ || !decoder_->isOpen()) {
         return 0;
     }
@@ -79,6 +117,7 @@ int64_t DecodeWorker::decoderDurationFrames() const {
 }
 
 int32_t DecodeWorker::decoderSampleRate() const {
+    std::lock_guard lock(decoderMutex_);
     if (!decoder_ || !decoder_->isOpen()) {
         return 0;
     }
@@ -86,66 +125,43 @@ int32_t DecodeWorker::decoderSampleRate() const {
 }
 
 Status DecodeWorker::prefill(int32_t maxChunks) {
-    if (!decoder_ || !ring_ || !decoder_->isOpen()) {
-        return Status::NotRunning;
-    }
-    for (int32_t i = 0; i < maxChunks; ++i) {
-        int32_t n = 0;
-        const Status st = decoder_->read(scratch_.data(), kReadChunkFrames, &n);
-        if (st != Status::Ok || n <= 0) {
-            if (n <= 0) {
-                eof_.store(true, std::memory_order_release);
-            }
-            break;
-        }
-        int32_t offset = 0;
-        while (offset < n) {
-            const int32_t pushed =
-                ring_->push(scratch_.data() + offset * ring_->channelCount(), n - offset);
-            if (pushed == 0) {
-                return Status::Ok;  // ring full
-            }
-            offset += pushed;
-        }
-    }
+    std::lock_guard lock(decoderMutex_);
+    if (!decoder_ || !ring_) return Status::NotRunning;
+    for (int32_t i = 0; i < maxChunks && fillChunk(); ++i) {}
     return Status::Ok;
+}
+
+bool DecodeWorker::fillChunk() {
+    const int32_t capacity = std::min(kReadChunkFrames, ring_->availableWrite());
+    if (capacity <= 0 || eof_.load(std::memory_order_relaxed)) return false;
+
+    int32_t frames = 0;
+    auto status = handoff_.read(*decoder_, scratch_.data(), capacity, &frames);
+    if (status == Status::Ok && frames == 0 &&
+        handoff_.stitch(decoder_, writtenFrames_, ring_->availableRead() != 0)) {
+        status = handoff_.read(*decoder_, scratch_.data(), capacity, &frames);
+    }
+    if (status != Status::Ok || frames <= 0) {
+        eof_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    // The consumer only increases the room available between the read and push.
+    writtenFrames_ += ring_->push(scratch_.data(), frames);
+    return true;
 }
 
 void DecodeWorker::threadMain() {
     while (running_.load(std::memory_order_acquire)) {
-        if (!pushEnabled_.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        if (!pushEnabled_.load(std::memory_order_acquire) || reachedEof()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(3));
             continue;
         }
-        if (eof_.load(std::memory_order_acquire)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-            continue;
+        {
+            std::lock_guard lock(decoderMutex_);
+            if (pushEnabled_.load(std::memory_order_relaxed) && fillChunk()) continue;
         }
-
-        int32_t framesRead = 0;
-        const Status st =
-            decoder_->read(scratch_.data(), kReadChunkFrames, &framesRead);
-        if (st != Status::Ok) {
-            eof_.store(true, std::memory_order_release);
-            continue;
-        }
-        if (framesRead <= 0) {
-            eof_.store(true, std::memory_order_release);
-            continue;
-        }
-
-        int32_t offset = 0;
-        while (offset < framesRead && running_.load(std::memory_order_acquire) &&
-               pushEnabled_.load(std::memory_order_acquire)) {
-            const int32_t pushed = ring_->push(
-                scratch_.data() + offset * ring_->channelCount(),
-                framesRead - offset);
-            if (pushed == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
-            }
-            offset += pushed;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
