@@ -22,6 +22,7 @@ import com.howl.music.data.db.HowlDatabase
 import com.howl.music.data.prefs.PreferencesRepository
 import com.howl.music.media.HowlPlaybackService
 import com.howl.music.media.PlaybackAnalysis
+import com.howl.music.media.PlaybackOutputDiagnostics
 import com.howl.music.media.PlaybackQueue
 import com.howl.music.ui.queue.QueueTrack
 import com.howl.music.ui.queue.QueueUiState
@@ -65,6 +66,7 @@ class MainActivity : ComponentActivity() {
                 HowlNavHost(
                     playback = playback.value,
                     readAnalysis = ::readAnalysis,
+                    readOutputDiagnostics = ::readOutputDiagnostics,
                     equalizer = equalizer,
                     onToggle = ::togglePlayback,
                     onPlayTrack = ::playTrack,
@@ -123,20 +125,27 @@ class MainActivity : ComponentActivity() {
         database.close()
     }
 
-    private suspend fun readAnalysis(): AnalysisSnapshot {
-        val controller = player.value ?: return AnalysisSnapshot.Silent
-        if (!controller.isSessionCommandAvailable(PlaybackAnalysis.read)) return AnalysisSnapshot.Silent
+    private suspend fun readAnalysis(): AnalysisSnapshot =
+        readPlaybackAnalysis(Bundle.EMPTY)?.let(PlaybackAnalysis::snapshot) ?: AnalysisSnapshot.Silent
+
+    private suspend fun readOutputDiagnostics(): PlaybackOutputDiagnostics? {
+        val args = Bundle().apply { putBoolean(PlaybackAnalysis.DIAGNOSTICS_ONLY, true) }
+        return readPlaybackAnalysis(args)?.let(PlaybackOutputDiagnostics::read)
+    }
+
+    private suspend fun readPlaybackAnalysis(args: Bundle): Bundle? {
+        val controller = player.value ?: return null
+        if (!controller.isSessionCommandAvailable(PlaybackAnalysis.read)) return null
         return suspendCancellableCoroutine { continuation ->
-            val future = controller.sendCustomCommand(PlaybackAnalysis.read, Bundle.EMPTY)
+            val future = controller.sendCustomCommand(PlaybackAnalysis.read, args)
             continuation.invokeOnCancellation { future.cancel(false) }
             future.addListener({
                 val result = runCatching { future.get() }.getOrNull()
-                val snapshot = if (player.value === controller && result?.resultCode == SessionResult.RESULT_SUCCESS) {
-                    PlaybackAnalysis.snapshot(result.extras)
-                } else {
-                    AnalysisSnapshot.Silent
-                }
-                continuation.resume(snapshot)
+                continuation.resume(
+                    result?.extras?.takeIf {
+                        player.value === controller && result.resultCode == SessionResult.RESULT_SUCCESS
+                    },
+                )
             }, ContextCompat.getMainExecutor(this))
         }
     }

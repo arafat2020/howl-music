@@ -49,6 +49,7 @@ Status FlacDecoder::open(const char* path) {
 
     format_.sampleRate = static_cast<int32_t>(handle->sampleRate);
     format_.channelCount = static_cast<int32_t>(handle->channels);
+    format_.codec = SourceCodec::Flac;
     format_.bitsPerSample = static_cast<int32_t>(handle->bitsPerSample);
     format_.sampleType = SampleType::Int16;  // source is integer PCM in FLAC
     frameCount_ = static_cast<int64_t>(handle->totalPCMFrameCount);

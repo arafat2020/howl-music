@@ -118,6 +118,7 @@ private:
     std::atomic<int64_t> positionFrames_{0};
     int64_t durationFrames_{0};
     int32_t fileSampleRate_{0};
+    AudioFormat loadedFormat_;
     ProcessGraph processGraph_;
 
 #if defined(__ANDROID__)

@@ -245,10 +245,15 @@ void AudioOutput::copyDiagnostics(EngineDiagnostics& out) const {
     out.underrun_count = impl_->underrunCount.load(std::memory_order_relaxed);
     out.error_count = impl_->errorCount.load(std::memory_order_relaxed);
 
-    if (!impl_->useRingUnderruns.load(std::memory_order_relaxed) && impl_->stream) {
-        auto xruns = impl_->stream->getXRunCount();
-        if (xruns) {
-            out.underrun_count = static_cast<int64_t>(xruns.value());
+    if (impl_->stream) {
+        out.hardware_rate = impl_->stream->getHardwareSampleRate();
+        out.device_id = impl_->stream->getDeviceId();
+        const auto xruns = impl_->stream->getXRunCount();
+        if (xruns && xruns.value() >= 0) {
+            out.platform_xruns = xruns.value();
+            if (!impl_->useRingUnderruns.load(std::memory_order_relaxed)) {
+                out.underrun_count = out.platform_xruns;
+            }
         }
     }
 }

@@ -5,9 +5,10 @@
 
 namespace howl {
 
-void GaplessHandoff::reset(int64_t durationFrames) {
+void GaplessHandoff::reset(int64_t durationFrames, AudioFormat format) {
     *this = GaplessHandoff{};
     current_.durationFrames = durationFrames;
+    current_.format = format;
 }
 
 Status GaplessHandoff::configure(std::unique_ptr<IDecoder> next, std::vector<float> head,
@@ -52,7 +53,7 @@ bool GaplessHandoff::stitch(std::unique_ptr<IDecoder>& decoder, int64_t boundary
     }
     previous_ = current_;
     previousDecoder_ = std::move(decoder);
-    current_ = {nextToken_, boundary, next_->frameCount()};
+    current_ = {nextToken_, boundary, next_->frameCount(), next_->format()};
     decoder = std::move(next_);
     currentHead_ = std::move(nextHead_);
     headOffset_ = 0;

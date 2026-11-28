@@ -1,6 +1,7 @@
 #pragma once
 
 #include "howl/engine_api.h"
+#include "howl/audio_format.h"
 
 #include <cstdint>
 
@@ -18,8 +19,12 @@ struct EngineDiagnostics {
     int32_t frames_per_burst{0};
     int32_t frames_per_callback{0};  // last onAudioReady numFrames
     int64_t callback_count{0};
-    int64_t underrun_count{0};       // Oboe getXRunCount()
+    int64_t underrun_count{0};       // Ring underruns in file mode
     int64_t error_count{0};          // Oboe error callback firings
+    AudioFormat source;
+    int32_t hardware_rate{0};
+    int32_t device_id{0};
+    int64_t platform_xruns{-1};
 };
 
 }  // namespace howl

@@ -42,6 +42,7 @@ import com.howl.music.media.HowlPlaybackService
 import com.howl.music.media.PlaybackAnalysis
 import com.howl.music.media.PlaybackEqualizer
 import com.howl.music.media.PlaybackQueue
+import com.howl.music.media.PlaybackOutputDiagnostics
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -554,8 +555,11 @@ class EngineApiInstrumentation : Instrumentation() {
             check(read().let { it.enabled && it.gains.preampDb == -6f &&
                 it.gains.bandsDb.contentEquals(changed.gains.bandsDb) })
             apply(changed.copy(enabled = false))
+            val bypassed = verifyOutputDiagnostics(controller, 48_000, eqEnabled = false)
+            Log.i("HowlOutputDiagnostics", "48 kHz: $bypassed")
             check(read().let { !it.enabled && it.gains.bandsDb.contentEquals(changed.gains.bandsDb) })
             apply(changed)
+            verifyOutputDiagnostics(controller, 48_000, eqEnabled = true)
             val invalid = onMain {
                 controller.sendCustomCommand(PlaybackEqualizer.apply, Bundle.EMPTY)
             }.get(5, TimeUnit.SECONDS)
@@ -564,6 +568,20 @@ class EngineApiInstrumentation : Instrumentation() {
         } finally {
             apply(original)
         }
+    }
+
+    private fun verifyOutputDiagnostics(
+        controller: MediaController,
+        expectedRate: Int,
+        eqEnabled: Boolean? = null,
+    ): PlaybackOutputDiagnostics {
+        val output = PlaybackOutputDiagnostics.read(visualizerDiagnostics(controller))
+        check(output.sourceCodec == "WAV" && output.sourceBits == 16 && !output.sourceFloat)
+        check(output.sourceRate == expectedRate && output.streamRate == expectedRate) { output.toString() }
+        check(output.sourceChannels == 2 && output.streamChannels == 2)
+        check(output.underruns >= 0 && output.errors >= 0)
+        check(eqEnabled == null || output.eqEnabled == eqEnabled)
+        return output
     }
 
     @androidx.annotation.RequiresApi(29)
@@ -601,11 +619,15 @@ class EngineApiInstrumentation : Instrumentation() {
                 controller.play()
             }
             waitFor("44.1 kHz library item playback") { onMain { controller.isPlaying } }
+            val output = verifyOutputDiagnostics(controller, 44_100)
+            Log.i("HowlOutputDiagnostics", "44.1 kHz: $output")
             onMain {
                 check(controller.mediaMetadata.title?.toString() == "Indexed WAV")
                 controller.setMediaItem(MediaItem.EMPTY)
             }
             waitFor("library source released") { onMain { controller.mediaItemCount == 0 } }
+            val empty = PlaybackOutputDiagnostics.read(visualizerDiagnostics(controller))
+            check(empty.sourceCodec == null && empty.streamRate == 0 && empty.route == null)
             verifySessionQueue(controller, item)
         } finally {
             resolver.delete(uri, null, null)

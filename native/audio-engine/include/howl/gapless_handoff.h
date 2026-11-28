@@ -14,6 +14,7 @@ struct GaplessTrack {
     int64_t token{0};
     int64_t startFrame{0};
     int64_t durationFrames{0};
+    AudioFormat format;
 };
 
 struct GaplessPlayback {
@@ -25,7 +26,7 @@ struct GaplessPlayback {
 /** Accessed under the decoder worker's mutex. Positions count real PCM frames, not zeros. */
 class GaplessHandoff {
 public:
-    void reset(int64_t durationFrames);
+    void reset(int64_t durationFrames, AudioFormat format = {});
     Status configure(std::unique_ptr<IDecoder> next, std::vector<float> head,
                      int64_t token, int64_t acknowledged, const AudioFormat& format);
     Status read(IDecoder& decoder, float* output, int32_t capacity, int32_t* frames);

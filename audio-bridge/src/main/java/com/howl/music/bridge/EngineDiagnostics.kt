@@ -13,8 +13,24 @@ data class EngineDiagnostics(
     val callbackCount: Long,
     val underrunCount: Long,
     val errorCount: Long,
+    val sourceCodec: SourceCodec = SourceCodec.Unknown,
+    val sourceRate: Int = 0,
+    val sourceChannels: Int = 0,
+    val sourceBits: Int = 0,
+    val sourceFloat: Boolean = false,
+    val hardwareRate: Int = 0,
+    val outputDeviceId: Int = 0,
+    val platformXruns: Long = -1,
+
 ) {
+    enum class SourceCodec { Unknown, WAV, FLAC }
+
     fun formatLines(): String = buildString {
+        if (sourceCodec != SourceCodec.Unknown) {
+            appendLine("source=${sourceCodec.name} $sourceRate Hz  $sourceBits-bit  ch=$sourceChannels")
+        }
+        if (hardwareRate > 0) appendLine("hardware-reported rate=$hardwareRate Hz")
+        if (platformXruns >= 0) appendLine("platform xruns=$platformXruns")
         appendLine("rate=$sampleRate Hz  ch=$channelCount")
         appendLine("burst=$framesPerBurst  cbFrames=$framesPerCallback")
         appendLine("callbacks=$callbackCount")

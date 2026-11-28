@@ -26,7 +26,7 @@ Status DecodeWorker::start(std::unique_ptr<IDecoder> decoder, PcmRingBuffer* rin
 
     decoder_ = std::move(decoder);
     ring_ = ring;
-    handoff_.reset(decoder_->frameCount());
+    handoff_.reset(decoder_->frameCount(), decoder_->format());
     writtenFrames_ = 0;
     eof_.store(false, std::memory_order_relaxed);
     // Start with push disabled so the control thread can prefill / seek safely

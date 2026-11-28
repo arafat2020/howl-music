@@ -37,9 +37,11 @@ Status Engine::probeAndStore(const char* path) {
     if (fmt.channelCount != 2) {
         durationFrames_ = 0;
         fileSampleRate_ = 0;
+        loadedFormat_ = {};
         return Status::UnsupportedFormat;
     }
     loadedPath_ = path;
+    loadedFormat_ = fmt;
     return Status::Ok;
 }
 
@@ -49,6 +51,7 @@ Status Engine::syncLoadedFromQueue() {
         loadedPath_.clear();
         durationFrames_ = 0;
         fileSampleRate_ = 0;
+        loadedFormat_ = {};
         return Status::InvalidState;
     }
     return probeAndStore(item->path.c_str());
@@ -137,6 +140,7 @@ Status Engine::clearQueue() {
     loadedPath_.clear();
     durationFrames_ = 0;
     fileSampleRate_ = 0;
+    loadedFormat_ = {};
     return Status::Ok;
 }
 
@@ -619,10 +623,13 @@ EngineState Engine::state() const {
 
 EngineDiagnostics Engine::diagnostics() const {
     EngineDiagnostics out{};
-#if defined(__ANDROID__)
     std::lock_guard<std::mutex> lock(mutex_);
-    if (output_) {
-        output_->copyDiagnostics(out);
+    if (playMode_ == PlayMode::File) out.source = loadedFormat_;
+#if defined(__ANDROID__)
+    if (output_) output_->copyDiagnostics(out);
+    if (gaplessTransport_ && worker_ && playMode_ == PlayMode::File) {
+        const auto consumed = positionFrames_.load(std::memory_order_acquire);
+        out.source = worker_->playback(consumed).track.format;
     }
 #endif
     return out;
@@ -685,6 +692,10 @@ Status Engine::stopPlayback() {
             return Status::Ok;
         }
         state_ = EngineState::Stopping;
+        if (gaplessTransport_ && worker_ && playMode_ == PlayMode::File) {
+            const auto consumed = positionFrames_.load(std::memory_order_acquire);
+            loadedFormat_ = worker_->playback(consumed).track.format;
+        }
         toJoin = std::move(worker_);
         toStop = std::move(output_);
         toDrop = std::move(ring_);
@@ -794,6 +805,7 @@ Status Engine::changeTrack(const std::string& path) {
         durationFrames_ = decoder->frameCount();
         fileSampleRate_ = fmt.sampleRate;
         loadedPath_ = path;
+        loadedFormat_ = fmt;
         positionFrames_.store(0, std::memory_order_relaxed);
 
         auto worker = std::make_unique<DecodeWorker>();
@@ -1153,6 +1165,17 @@ int32_t howl_engine_get_analysis(HowlEngineHandle* engine, HowlAnalysisSnapshot*
     }
     const auto snapshot = reinterpret_cast<howl::Engine*>(engine)->analysis();
     *out = {snapshot.peak, snapshot.rms};
+    return static_cast<int32_t>(howl::Status::Ok);
+}
+
+int32_t howl_engine_get_output_diagnostics(HowlEngineHandle* engine, HowlOutputDiagnostics* out) {
+    if (!engine || !out) return static_cast<int32_t>(howl::Status::NullHandle);
+    const auto snap = reinterpret_cast<howl::Engine*>(engine)->diagnostics();
+    *out = {{snap.sample_rate, snap.channel_count, snap.frames_per_burst, snap.frames_per_callback,
+             snap.callback_count, snap.underrun_count, snap.error_count},
+            static_cast<int32_t>(snap.source.codec), snap.source.sampleRate, snap.source.channelCount,
+            snap.source.bitsPerSample, static_cast<int32_t>(snap.source.sampleType),
+            snap.hardware_rate, snap.device_id, snap.platform_xruns};
     return static_cast<int32_t>(howl::Status::Ok);
 }
 

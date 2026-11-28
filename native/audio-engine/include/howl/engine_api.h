@@ -33,6 +33,18 @@ typedef struct HowlEngineDiagnostics {
     int64_t error_count;
 } HowlEngineDiagnostics;
 
+typedef struct HowlOutputDiagnostics {
+    HowlEngineDiagnostics stream;
+    int32_t source_codec;  // 0 unknown, 1 WAV, 2 FLAC
+    int32_t source_rate;
+    int32_t source_channels;
+    int32_t source_bits;
+    int32_t source_sample_type; // 0 integer, 1 float
+    int32_t hardware_rate;      // 0 when unavailable
+    int32_t device_id;          // 0 when unavailable
+    int64_t platform_xruns;     // -1 when unavailable
+} HowlOutputDiagnostics;
+
 /** Peak and RMS of the latest output block. Zero when disabled, stopped, or paused. */
 typedef struct HowlAnalysisSnapshot {
     float peak;
@@ -78,6 +90,7 @@ int32_t howl_engine_set_gapless_next(HowlEngineHandle* engine, const char* path,
 int32_t howl_engine_get_gapless_transport(HowlEngineHandle* engine, HowlEngineGaplessTransport* out);
 
 int32_t howl_engine_get_diagnostics(HowlEngineHandle* engine, HowlEngineDiagnostics* out);
+int32_t howl_engine_get_output_diagnostics(HowlEngineHandle* engine, HowlOutputDiagnostics* out);
 
 int32_t howl_engine_set_analysis_enabled(HowlEngineHandle* engine, int32_t enabled);
 int32_t howl_engine_get_analysis(HowlEngineHandle* engine, HowlAnalysisSnapshot* out);

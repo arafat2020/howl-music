@@ -150,6 +150,14 @@ class HowlEngine private constructor(
             callbackCount = buf[4],
             underrunCount = buf[5],
             errorCount = buf[6],
+            sourceCodec = EngineDiagnostics.SourceCodec.entries[buf[7].toInt()],
+            sourceRate = buf[8].toInt(),
+            sourceChannels = buf[9].toInt(),
+            sourceBits = buf[10].toInt(),
+            sourceFloat = buf[11] != 0L,
+            hardwareRate = buf[12].toInt(),
+            outputDeviceId = buf[13].toInt(),
+            platformXruns = buf[14],
         )
     }
 
@@ -188,7 +196,7 @@ class HowlEngine private constructor(
     }
 
     companion object {
-        private const val DIAG_FIELDS = 7
+        private const val DIAG_FIELDS = 15
         private const val TRANSPORT_FIELDS = 7
 
         private val loadError: String? = try {

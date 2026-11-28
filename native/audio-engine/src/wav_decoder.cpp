@@ -186,6 +186,7 @@ Status WavDecoder::parseHeader() {
     frameCount_ = dataSizeBytes_ / bytesPerFrame_;
     format_.sampleRate = static_cast<int32_t>(sampleRate);
     format_.channelCount = static_cast<int32_t>(channels);
+    format_.codec = SourceCodec::Wav;
     format_.bitsPerSample = static_cast<int32_t>(bitsPerSample);
     format_.sampleType = sampleType;
 

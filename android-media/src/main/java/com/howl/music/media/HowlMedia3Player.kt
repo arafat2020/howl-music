@@ -66,6 +66,8 @@ class HowlMedia3Player internal constructor(
 
     internal fun analysisDiagnostics() = engine.diagnostics()
 
+    internal fun hasDiagnosticSource() = current != null && durationMs != C.TIME_UNSET
+
     private fun stopAnalysis() {
         handler.removeCallbacks(expireAnalysis)
         if (analyzing) {

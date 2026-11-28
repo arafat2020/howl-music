@@ -367,27 +367,22 @@ Java_com_howl_music_bridge_HowlEngine_nativeGetDiagnostics(
         return static_cast<jint>(howl::Status::NullHandle);
     }
     const jsize len = env->GetArrayLength(out);
-    if (len < 7) {
+    if (len < 15) {
         return static_cast<jint>(howl::Status::InvalidState);
     }
 
-    HowlEngineDiagnostics snap{};
+    HowlOutputDiagnostics snap{};
     const int32_t code = callNative(env, [&] {
-        return howl_engine_get_diagnostics(reinterpret_cast<HowlEngineHandle*>(handle), &snap);
+        return howl_engine_get_output_diagnostics(reinterpret_cast<HowlEngineHandle*>(handle), &snap);
     });
-    if (code != 0 || env->ExceptionCheck()) {
-        return code;
-    }
-
-    jlong buf[7];
-    buf[0] = snap.sample_rate;
-    buf[1] = snap.channel_count;
-    buf[2] = snap.frames_per_burst;
-    buf[3] = snap.frames_per_callback;
-    buf[4] = snap.callback_count;
-    buf[5] = snap.underrun_count;
-    buf[6] = snap.error_count;
-    env->SetLongArrayRegion(out, 0, 7, buf);
+    if (code != 0 || env->ExceptionCheck()) return code;
+    const auto& stream = snap.stream;
+    const jlong buf[]{stream.sample_rate, stream.channel_count, stream.frames_per_burst,
+                      stream.frames_per_callback, stream.callback_count, stream.underrun_count,
+                      stream.error_count, snap.source_codec, snap.source_rate, snap.source_channels,
+                      snap.source_bits, snap.source_sample_type, snap.hardware_rate, snap.device_id,
+                      snap.platform_xruns};
+    env->SetLongArrayRegion(out, 0, 15, buf);
     return code;
 }
 

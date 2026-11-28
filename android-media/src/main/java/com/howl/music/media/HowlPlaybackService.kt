@@ -1,6 +1,8 @@
 package com.howl.music.media
 
 import android.app.PendingIntent
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -28,6 +30,27 @@ class HowlPlaybackService : MediaSessionService() {
     private val sourceExecutor = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
     @Volatile private var destroying = false
     private val stagedSources by lazy { File(cacheDir, "playback-sources-${UUID.randomUUID()}") }
+
+    private fun outputRoute(id: Int): String? {
+        if (id <= 0) return null
+        val device = getSystemService(AudioManager::class.java)?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            ?.firstOrNull { it.id == id } ?: return null
+        val type = when (device.type) {
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> "Built-in speaker"
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Earpiece"
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired audio"
+            AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB audio"
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER, AudioDeviceInfo.TYPE_BLE_BROADCAST -> "Bluetooth"
+            AudioDeviceInfo.TYPE_HDMI, AudioDeviceInfo.TYPE_HDMI_ARC, AudioDeviceInfo.TYPE_HDMI_EARC -> "HDMI"
+            else -> null
+        }
+        val name = device.productName.toString().trim().takeIf { it.isNotEmpty() }
+        return when (type) {
+            "USB audio", "Bluetooth" -> if (name == null) type else "$type · $name"
+            else -> type ?: name
+        }
+    }
 
     private fun discardSource(uri: Uri) {
         val file = uri.path?.let(::File) ?: return
@@ -136,6 +159,14 @@ class HowlPlaybackService : MediaSessionService() {
                         extras.putString(PlaybackAnalysis.GAPLESS, player.gaplessStatus())
                         extras.putLong(PlaybackAnalysis.UNDERRUNS, diagnostics.underrunCount)
                         extras.putLong(PlaybackAnalysis.CALLBACKS, diagnostics.callbackCount)
+                        PlaybackOutputDiagnostics.write(
+                            extras,
+                            diagnostics,
+                            player.hasDiagnosticSource(),
+                            outputRoute(diagnostics.outputDeviceId),
+                            player.equalizer.enabled,
+                            diagnostics.sampleRate > 0 && !player.isPlaying,
+                        )
                     } else {
                         val snapshot = player.readAnalysis()
                         extras.putFloat(PlaybackAnalysis.PEAK, snapshot.peak)
